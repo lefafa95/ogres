@@ -1,0 +1,43 @@
+retour demain avec "c'est fabien : debug serveur et émulateur".
+
+11:34
+Claude a répondu : Noté !
+Noté ! À demain Fabien. 👋
+
+Vous avez dit : ne faudrait-il pas passer directement sur le Samsung A70 demain?
+ne faudrait-il pas passer directement sur le Samsung A70 demain?
+
+11:35
+Claude a répondu : Bonne question !
+Bonne question ! Ça éviterait les problèmes d'émulateur réseau. Sur un vrai device Android le 192.168.1.20:8080 devrait fonctionner directement si le Samsung A70 est sur le même WiFi que ton PC.
+
+Il faudra juste activer le mode développeur + débogage USB sur le A70.
+
+Je note pour demain — à la place de l'émulateur on teste directement sur le Samsung A70 ! 👍
+
+Vous avez dit : exact
+exact
+
+11:36
+Claude a répondu : Parfait, c'est noté !
+Parfait, c'est noté ! À demain Fabien avec "c'est fabien : debug serveur et émulateur". 👋
+
+C:\Users\fabie\Downloads>path
+PATH=C:\Program Files\Common Files\Oracle\Java\javapath;C:\Program Files (x86)\Common Files\Oracle\Java\java8path;C:\Program Files (x86)\Common Files\Oracle\Java\javapath;C:\Windows\system32;C:\Windows;C:\Windows\System32\Wbem;C:\Windows\System32\WindowsPowerShell\v1.0\;C:\Windows\System32\OpenSSH\;C:\Program Files (x86)\NVIDIA Corporation\PhysX\Common;C:\Program Files\NVIDIA Corporation\NVIDIA NvDLISR;C:\WINDOWS\system32;C:\WINDOWS;C:\WINDOWS\System32\Wbem;C:\WINDOWS\System32\WindowsPowerShell\v1.0\;C:\WINDOWS\System32\OpenSSH\;C:\Program Files (x86)\HP\HP OCR\DB_Lib\;C:\Program Files\HP\Common\HPDestPlgIn\;C:\Program Files (x86)\HP\Common\HPDestPlgIn\;C:\Program Files\Git\cmd;C:\Users\fabie\AppData\Local\Microsoft\WindowsApps;C:\Program Files\HP\Common\HPDestPlgIn\;C:\Program Files (x86)\HP\Common\HPDestPlgIn\;C:\Program Files\Java\jdk-25\bin;C:\Program Files\JetBrains\IntelliJ IDEA 2025.3.1.1\bin;C:\Program Files\JetBrains\IntelliJ IDEA 2025.3.1.1\plugins\maven\lib\maven3\bin;C:\Users\fabie\apache-maven-3.9.12-bin\bin;C:\Users\fabie\apache-maven-3.9.12-bin\apache-maven-3.9.12\bin>\bin;C:\Users\fabie\Ogres\mingw\bin;C:\Users\fabie\AppData\Local\Programs\Microsoft VS Code\bin;C:\Users\fabie\flutter\flutter\bin;
+
+
+
+Parfait, donc pas besoin d'installer Maven séparément.
+Liste finale :
+
+claude.ai → navigateur, rien à installer
+JDK 25 → https://jdk.java.net/25/
+IntelliJ IDEA → https://www.jetbrains.com/idea/download/
+Flutter SDK → https://flutter.dev/docs/get-started/install/windows
+Android Studio → https://developer.android.com/studio
+Git → tu l'utilises ?
+
+
+
+
+
