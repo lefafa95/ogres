@@ -440,6 +440,10 @@ class _CavitePageState extends State<CavitePage> with LocalizedPage {
   List<FlSpot> _tCasingShoeSpots = [];
   List<FlSpot> _pCavernSpots = [];
   List<FlSpot> _tCavernSpots = [];
+  List<FlSpot> _pCasingShoeSimSpots = [];
+  List<FlSpot> _tCasingShoeSimSpots = [];
+  List<FlSpot> _pCavernSimSpots     = [];
+  List<FlSpot> _tCavernSimSpots     = [];
   bool _isCalculatingGip = false;
   bool _gipDone = false;
   Map<String, dynamic>? _gipResult;
@@ -628,20 +632,29 @@ class _CavitePageState extends State<CavitePage> with LocalizedPage {
         if (responseFull.statusCode == 200) {
           final List<dynamic> dataFull = jsonDecode(responseFull.body);
           final List<FlSpot> pCS = [], tCS = [], pCav = [], tCav = [];
+          final List<FlSpot> pCSsim = [], tCSsim = [], pCavSim = [], tCavSim = [];
           for (final point in dataFull) {
             try {
               final x = DateTime.parse(point['date'].toString()).millisecondsSinceEpoch.toDouble();
-              final pcs  = point['pCasingShoe']; if (pcs  != null) pCS.add(FlSpot(x, (pcs  as num).toDouble()));
-              final tcs  = point['tCasingShoe']; if (tcs  != null) tCS.add(FlSpot(x, (tcs  as num).toDouble()));
-              final pcav = point['pCavern'];      if (pcav != null) pCav.add(FlSpot(x, (pcav as num).toDouble()));
-              final tcav = point['tCavern'];      if (tcav != null) tCav.add(FlSpot(x, (tcav as num).toDouble()));
+              final pcs  = point['pCasingShoe'];       if (pcs  != null) pCS.add(FlSpot(x, (pcs  as num).toDouble()));
+              final tcs  = point['tCasingShoe'];       if (tcs  != null) tCS.add(FlSpot(x, (tcs  as num).toDouble()));
+              final pcav = point['pCavern'];            if (pcav != null) pCav.add(FlSpot(x, (pcav as num).toDouble()));
+              final tcav = point['tCavern'];            if (tcav != null) tCav.add(FlSpot(x, (tcav as num).toDouble()));
+              final pcss = point['pCasingShoeSimule'];  if (pcss != null) pCSsim.add(FlSpot(x, (pcss as num).toDouble()));
+              final tcss = point['tCasingShoeSimule'];  if (tcss != null) tCSsim.add(FlSpot(x, (tcss as num).toDouble()));
+              final pcvs = point['pCavernSimule'];      if (pcvs != null) pCavSim.add(FlSpot(x, (pcvs as num).toDouble()));
+              final tcvs = point['tCavernSimule'];      if (tcvs != null) tCavSim.add(FlSpot(x, (tcvs as num).toDouble()));
             } catch (_) {}
           }
           setState(() {
-            _pCasingShoeSpots = pCS;
-            _tCasingShoeSpots = tCS;
-            _pCavernSpots     = pCav;
-            _tCavernSpots     = tCav;
+            _pCasingShoeSpots    = pCS;
+            _tCasingShoeSpots    = tCS;
+            _pCavernSpots        = pCav;
+            _tCavernSpots        = tCav;
+            _pCasingShoeSimSpots = pCSsim;
+            _tCasingShoeSimSpots = tCSsim;
+            _pCavernSimSpots     = pCavSim;
+            _tCavernSimSpots     = tCavSim;
           });
         } else {
           print('Erreur fullcavity: ${responseFull.statusCode} ${responseFull.body}');
@@ -747,58 +760,97 @@ class _CavitePageState extends State<CavitePage> with LocalizedPage {
   }
 
   Widget _buildGipTable() {
-    final labels = [
-      tr('Pmax permis / Débit souti max'),
-      tr('Pmax permis / Débit souti min'),
-      tr('Pmin permis / Débit souti max'),
-      tr('Pmin permis / Débit souti min'),
-      tr('Pmax histo / Débit souti max'),
-      tr('Pmax histo / Débit souti min'),
-      tr('Pmin histo / Débit souti max'),
-      tr('Pmin histo / Débit souti min'),
-      tr('Dernier pt → Pmin / Débit souti max'),
-      tr('Dernier pt → Pmin / Débit souti min'),
-      tr('MAX scénarios 1-8'),
-      tr('MIN scénarios 1-8'),
-      tr('Dernier pt → Pmax / Débit souti max'),
-      tr('Dernier pt → Pmax / Débit souti min'),
+    if (_gipResult == null) return const SizedBox();
+
+    // Lignes : ordre standalone
+    final rows = [
+      {'label': tr('Valeurs garanties'),                          'key': 'WGV_GIP_CGV_list11'},
+      {'label': tr('Valeurs minimales'),                          'key': 'WGV_GIP_CGV_list12'},
+      {'label': tr('Valeurs maximales'),                          'key': 'WGV_GIP_CGV_list_max'},
+      {'label': tr('Pmax du permis(Qmax)'),                       'key': 'WGV_GIP_CGV_list1'},
+      {'label': tr('Pmax du permis(Qmin)'),                       'key': 'WGV_GIP_CGV_list2'},
+      {'label': tr('Pmin du permis(Qmax)'),                       'key': 'WGV_GIP_CGV_list3'},
+      {'label': tr('Pmin du permis(Qmin)'),                       'key': 'WGV_GIP_CGV_list4'},
+      {'label': tr('Pmax historique(Qmax)'),                      'key': 'WGV_GIP_CGV_list5'},
+      {'label': tr('Pmax historique(Qmin)'),                      'key': 'WGV_GIP_CGV_list6'},
+      {'label': tr('Pmin historique(Qmax)'),                      'key': 'WGV_GIP_CGV_list7'},
+      {'label': tr('Pmin historique(Qmin)'),                      'key': 'WGV_GIP_CGV_list8'},
+      {'label': tr('Dernière P histo injection (Qmax)'),          'key': 'WGV_GIP_CGV_list9'},
+      {'label': tr('Dernière P histo injection (Qmin)'),          'key': 'WGV_GIP_CGV_list10'},
+      {'label': tr('Dernière P histo soutirage (Qmax)'),          'key': 'WGV_GIP_CGV_list13'},
+      {'label': tr('Dernière P histo soutirage (Qmin)'),          'key': 'WGV_GIP_CGV_list14'},
     ];
-    return Column(
-      children: List.generate(14, (i) {
-        final key = 'WGV_GIP_CGV_list${i + 1}';
-        final vals = _gipResult![key] as List<dynamic>?;
-        if (vals == null || vals.length < 3) return const SizedBox();
-        final wgv = (vals[0] as num).toStringAsFixed(2);
-        final gip = (vals[1] as num).toStringAsFixed(2);
-        final cgv = (vals[2] as num).toStringAsFixed(2);
-        final isHighlight = i == 10 || i == 11;
-        return Container(
-          margin: const EdgeInsets.only(bottom: 4),
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-          decoration: BoxDecoration(
-            color: isHighlight ? kOrange.withValues(alpha: 0.15) : Colors.white.withValues(alpha: 0.05),
-            borderRadius: BorderRadius.circular(6),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(labels[i], style: TextStyle(
-                color: isHighlight ? kOrange : Colors.white54,
-                fontSize: 10,
+
+    // Calcul min/max sur scénarios 1-8
+    double? maxWGV, minWGV, maxCGV, minCGV;
+    for (int i = 1; i <= 8; i++) {
+      final v = _gipResult!['WGV_GIP_CGV_list\$i'] as List<dynamic>?;
+      if (v != null && v.length >= 3) {
+        final w = (v[0] as num).toDouble();
+        final c = (v[2] as num).toDouble();
+        if (maxWGV == null || w > maxWGV) maxWGV = w;
+        if (minWGV == null || w < minWGV) minWGV = w;
+        if (maxCGV == null || c > maxCGV) maxCGV = c;
+        if (minCGV == null || c < minCGV) minCGV = c;
+      }
+    }
+    final vMax = maxWGV != null ? [maxWGV, (maxWGV + maxCGV!), maxCGV] : null;
+    final vMin = minWGV != null ? [minWGV, (minWGV + minCGV!), minCGV] : null;
+
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: DataTable(
+        headingRowColor: WidgetStateProperty.all(kBleuMoyen),
+        dataRowMinHeight: 28, dataRowMaxHeight: 36,
+        columnSpacing: 12,
+        headingTextStyle: const TextStyle(color: kOrange, fontWeight: FontWeight.bold, fontSize: 10),
+        dataTextStyle: const TextStyle(color: Colors.white, fontSize: 10),
+        columns: [
+          DataColumn(label: Text(tr('Scénario'), style: const TextStyle(color: kOrange, fontWeight: FontWeight.bold, fontSize: 10))),
+          DataColumn(label: const Text('WGV'), numeric: true),
+          DataColumn(label: const Text('CGV'), numeric: true),
+          DataColumn(label: const Text('GIP'), numeric: true),
+        ],
+        rows: rows.map((row) {
+          final key = row['key']!;
+          List<dynamic>? vals;
+          if (key == 'dummy_never') {
+            vals = null;
+          } else {
+            vals = _gipResult![key] as List<dynamic>?;
+          }
+          if (vals == null || vals.length < 3) return const DataRow(cells: []);
+          final isHighlight = key == 'WGV_GIP_CGV_list11' || key == 'WGV_GIP_CGV_list12' || key == '_valeursMax' || key == '_valeursMin';
+          return DataRow(
+            color: WidgetStateProperty.all(
+              isHighlight ? kOrange.withValues(alpha: 0.15) : Colors.transparent),
+            cells: [
+              DataCell(Text(row['label']!, style: TextStyle(
+                color: isHighlight ? kOrange : Colors.white70,
+                fontSize: 9.5,
                 fontWeight: isHighlight ? FontWeight.bold : FontWeight.normal,
-              )),
-              const SizedBox(height: 2),
-              Row(children: [
-                _gipCell('WGV', wgv),
-                const SizedBox(width: 8),
-                _gipCell('GIP', gip),
-                const SizedBox(width: 8),
-                _gipCell('CGV', cgv),
-              ]),
+              ))),
+              DataCell(Text((vals[0] as num).toStringAsFixed(2),
+                style: TextStyle(color: isHighlight ? Colors.red : Colors.white, fontSize: 10))),
+              DataCell(Text((vals[2] as num).toStringAsFixed(2),
+                style: TextStyle(color: isHighlight ? Colors.red : Colors.white, fontSize: 10))),
+              DataCell(Text((vals[1] as num).toStringAsFixed(2),
+                style: TextStyle(color: isHighlight ? Colors.red : Colors.white, fontSize: 10))),
             ],
-          ),
-        );
-      }),
+          );
+        }).where((r) => r.cells.isNotEmpty).toList(),
+      ),
+    );
+  }
+
+  Widget _gipRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 1),
+      child: Row(children: [
+        SizedBox(width: 36, child: Text(label, style: const TextStyle(color: Colors.white54, fontSize: 9, fontWeight: FontWeight.bold))),
+        Text(value, style: const TextStyle(color: kOrange, fontWeight: FontWeight.bold, fontSize: 10)),
+        const Text(' Mm³', style: TextStyle(color: Colors.white38, fontSize: 9)),
+      ]),
     );
   }
 
@@ -903,6 +955,8 @@ class _CavitePageState extends State<CavitePage> with LocalizedPage {
     required String unite,
     double? hMin,
     double? hMax,
+    List<FlSpot>? simSpots,
+    Color? simColor,
   }) {
     if (spots.isEmpty) {
       return Padding(
@@ -910,10 +964,11 @@ class _CavitePageState extends State<CavitePage> with LocalizedPage {
         child: Text(tr('Pas de données'), style: const TextStyle(color: Colors.white54)),
       );
     }
-    final minX = spots.map((s) => s.x).reduce((a, b) => a < b ? a : b);
-    final maxX = spots.map((s) => s.x).reduce((a, b) => a > b ? a : b);
-    final minY = spots.map((s) => s.y).reduce((a, b) => a < b ? a : b);
-    final maxY = spots.map((s) => s.y).reduce((a, b) => a > b ? a : b);
+    final allSpots = [...spots, ...(simSpots ?? [])];
+    final minX = allSpots.map((s) => s.x).reduce((a, b) => a < b ? a : b);
+    final maxX = allSpots.map((s) => s.x).reduce((a, b) => a > b ? a : b);
+    final minY = allSpots.map((s) => s.y).reduce((a, b) => a < b ? a : b);
+    final maxY = allSpots.map((s) => s.y).reduce((a, b) => a > b ? a : b);
     final paddingY = (maxY - minY) * 0.1 + 1;
 
     return Column(
@@ -921,7 +976,12 @@ class _CavitePageState extends State<CavitePage> with LocalizedPage {
       children: [
         Row(children: [
           Container(width: 12, height: 12, color: lineColor, margin: const EdgeInsets.only(right: 4)),
-          Text(tr('Données réelles'), style: const TextStyle(color: Colors.white70, fontSize: 11)),
+          Text(tr('Estimated values'), style: const TextStyle(color: Colors.white70, fontSize: 11)),
+          if (simSpots != null && simSpots.isNotEmpty) ...[
+            const SizedBox(width: 8),
+            Container(width: 12, height: 12, color: simColor ?? Colors.redAccent, margin: const EdgeInsets.only(right: 4)),
+            Text(tr('Simulated values'), style: const TextStyle(color: Colors.white70, fontSize: 11)),
+          ],
           const Spacer(),
           Text(unite, style: const TextStyle(color: Colors.white54, fontSize: 11)),
         ]),
@@ -957,6 +1017,12 @@ class _CavitePageState extends State<CavitePage> with LocalizedPage {
                 dotData: const FlDotData(show: false),
                 belowBarData: BarAreaData(show: true, color: lineColor.withValues(alpha: 0.08)),
               ),
+              if (simSpots != null && simSpots.isNotEmpty)
+                LineChartBarData(
+                  spots: simSpots, color: simColor ?? Colors.redAccent, barWidth: 1.5,
+                  dotData: const FlDotData(show: false),
+                  dashArray: [4, 2],
+                ),
             ],
           )),
         ),
@@ -1069,6 +1135,8 @@ class _CavitePageState extends State<CavitePage> with LocalizedPage {
                 unite: 'bar',
                 hMin: (_cavite?['pminCasingShoe'] as num?)?.toDouble(),
                 hMax: (_cavite?['pmaxCasingShoe'] as num?)?.toDouble(),
+                simSpots: _pCasingShoeSimSpots,
+                simColor: Colors.red,
               ),
               const SizedBox(height: 16),
               _buildSectionTitle(tr('Température Casing Shoe')),
@@ -1077,6 +1145,8 @@ class _CavitePageState extends State<CavitePage> with LocalizedPage {
                 spots: _tCasingShoeSpots,
                 lineColor: Colors.cyanAccent,
                 unite: '°C',
+                simSpots: _tCasingShoeSimSpots,
+                simColor: Colors.redAccent,
               ),
               const SizedBox(height: 16),
               _buildSectionTitle(tr('Pression Caverne')),
@@ -1087,6 +1157,8 @@ class _CavitePageState extends State<CavitePage> with LocalizedPage {
                 unite: 'bar',
                 hMin: (_cavite?['pminCavern'] as num?)?.toDouble(),
                 hMax: (_cavite?['pmaxCavern'] as num?)?.toDouble(),
+                simSpots: _pCavernSimSpots,
+                simColor: Colors.red,
               ),
               const SizedBox(height: 16),
               _buildSectionTitle(tr('Température Caverne')),
@@ -1095,6 +1167,8 @@ class _CavitePageState extends State<CavitePage> with LocalizedPage {
                 spots: _tCavernSpots,
                 lineColor: Colors.purpleAccent,
                 unite: '°C',
+                simSpots: _tCavernSimSpots,
+                simColor: Colors.redAccent,
               ),
             ],
           ),
@@ -1813,58 +1887,86 @@ class _GipPageState extends State<GipPage> with LocalizedPage {
   }
 
   Widget _buildGipTable() {
-    final labels = [
-      tr('Pmax permis / Débit souti max'),
-      tr('Pmax permis / Débit souti min'),
-      tr('Pmin permis / Débit souti max'),
-      tr('Pmin permis / Débit souti min'),
-      tr('Pmax histo / Débit souti max'),
-      tr('Pmax histo / Débit souti min'),
-      tr('Pmin histo / Débit souti max'),
-      tr('Pmin histo / Débit souti min'),
-      tr('Dernier pt → Pmin / Débit souti max'),
-      tr('Dernier pt → Pmin / Débit souti min'),
-      tr('MAX scénarios 1-8'),
-      tr('MIN scénarios 1-8'),
-      tr('Dernier pt → Pmax / Débit souti max'),
-      tr('Dernier pt → Pmax / Débit souti min'),
+    if (_gipResult == null) return const SizedBox();
+
+    // Lignes : ordre standalone
+    final rows = [
+      {'label': tr('Valeurs garanties'),                          'key': 'WGV_GIP_CGV_list11'},
+      {'label': tr('Valeurs minimales'),                          'key': 'WGV_GIP_CGV_list12'},
+      {'label': tr('Valeurs maximales'),                          'key': 'WGV_GIP_CGV_list_max'},
+      {'label': tr('Pmax du permis(Qmax)'),                       'key': 'WGV_GIP_CGV_list1'},
+      {'label': tr('Pmax du permis(Qmin)'),                       'key': 'WGV_GIP_CGV_list2'},
+      {'label': tr('Pmin du permis(Qmax)'),                       'key': 'WGV_GIP_CGV_list3'},
+      {'label': tr('Pmin du permis(Qmin)'),                       'key': 'WGV_GIP_CGV_list4'},
+      {'label': tr('Pmax historique(Qmax)'),                      'key': 'WGV_GIP_CGV_list5'},
+      {'label': tr('Pmax historique(Qmin)'),                      'key': 'WGV_GIP_CGV_list6'},
+      {'label': tr('Pmin historique(Qmax)'),                      'key': 'WGV_GIP_CGV_list7'},
+      {'label': tr('Pmin historique(Qmin)'),                      'key': 'WGV_GIP_CGV_list8'},
+      {'label': tr('Dernière P histo injection (Qmax)'),          'key': 'WGV_GIP_CGV_list9'},
+      {'label': tr('Dernière P histo injection (Qmin)'),          'key': 'WGV_GIP_CGV_list10'},
+      {'label': tr('Dernière P histo soutirage (Qmax)'),          'key': 'WGV_GIP_CGV_list13'},
+      {'label': tr('Dernière P histo soutirage (Qmin)'),          'key': 'WGV_GIP_CGV_list14'},
     ];
-    return Column(
-      children: List.generate(14, (i) {
-        final key = 'WGV_GIP_CGV_list${i + 1}';
-        final vals = _gipResult![key] as List<dynamic>?;
-        if (vals == null || vals.length < 3) return const SizedBox();
-        final wgv = (vals[0] as num).toStringAsFixed(2);
-        final gip = (vals[1] as num).toStringAsFixed(2);
-        final cgv = (vals[2] as num).toStringAsFixed(2);
-        final isHighlight = i == 10 || i == 11;
-        return Container(
-          margin: const EdgeInsets.only(bottom: 4),
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-          decoration: BoxDecoration(
-            color: isHighlight ? kOrange.withValues(alpha: 0.15) : Colors.white.withValues(alpha: 0.05),
-            borderRadius: BorderRadius.circular(6),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(labels[i], style: TextStyle(
-                color: isHighlight ? kOrange : Colors.white54,
-                fontSize: 10,
+
+    // Calcul min/max sur scénarios 1-8
+    double? maxWGV, minWGV, maxCGV, minCGV;
+    for (int i = 1; i <= 8; i++) {
+      final v = _gipResult!['WGV_GIP_CGV_list\$i'] as List<dynamic>?;
+      if (v != null && v.length >= 3) {
+        final w = (v[0] as num).toDouble();
+        final c = (v[2] as num).toDouble();
+        if (maxWGV == null || w > maxWGV) maxWGV = w;
+        if (minWGV == null || w < minWGV) minWGV = w;
+        if (maxCGV == null || c > maxCGV) maxCGV = c;
+        if (minCGV == null || c < minCGV) minCGV = c;
+      }
+    }
+    final vMax = maxWGV != null ? [maxWGV, (maxWGV + maxCGV!), maxCGV] : null;
+    final vMin = minWGV != null ? [minWGV, (minWGV + minCGV!), minCGV] : null;
+
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: DataTable(
+        headingRowColor: WidgetStateProperty.all(kBleuMoyen),
+        dataRowMinHeight: 28, dataRowMaxHeight: 36,
+        columnSpacing: 12,
+        headingTextStyle: const TextStyle(color: kOrange, fontWeight: FontWeight.bold, fontSize: 10),
+        dataTextStyle: const TextStyle(color: Colors.white, fontSize: 10),
+        columns: [
+          DataColumn(label: Text(tr('Scénario'), style: const TextStyle(color: kOrange, fontWeight: FontWeight.bold, fontSize: 10))),
+          DataColumn(label: const Text('WGV'), numeric: true),
+          DataColumn(label: const Text('CGV'), numeric: true),
+          DataColumn(label: const Text('GIP'), numeric: true),
+        ],
+        rows: rows.map((row) {
+          final key = row['key']!;
+          List<dynamic>? vals;
+          if (key == 'dummy_never') {
+            vals = null;
+          } else {
+            vals = _gipResult![key] as List<dynamic>?;
+          }
+          if (vals == null || vals.length < 3) return const DataRow(cells: []);
+          final isHighlight = key == 'WGV_GIP_CGV_list11' || key == 'WGV_GIP_CGV_list12' || key == '_valeursMax' || key == '_valeursMin';
+          return DataRow(
+            color: WidgetStateProperty.all(
+              isHighlight ? kOrange.withValues(alpha: 0.15) : Colors.transparent),
+            cells: [
+              DataCell(Text(row['label']!, style: TextStyle(
+                color: isHighlight ? kOrange : Colors.white70,
+                fontSize: 9.5,
                 fontWeight: isHighlight ? FontWeight.bold : FontWeight.normal,
-              )),
-              const SizedBox(height: 2),
-              Row(children: [
-                _gipCell('WGV', wgv),
-                const SizedBox(width: 8),
-                _gipCell('GIP', gip),
-                const SizedBox(width: 8),
-                _gipCell('CGV', cgv),
-              ]),
+              ))),
+              DataCell(Text((vals[0] as num).toStringAsFixed(2),
+                style: TextStyle(color: isHighlight ? Colors.red : Colors.white, fontSize: 10))),
+              DataCell(Text((vals[2] as num).toStringAsFixed(2),
+                style: TextStyle(color: isHighlight ? Colors.red : Colors.white, fontSize: 10))),
+              DataCell(Text((vals[1] as num).toStringAsFixed(2),
+                style: TextStyle(color: isHighlight ? Colors.red : Colors.white, fontSize: 10))),
             ],
-          ),
-        );
-      }),
+          );
+        }).where((r) => r.cells.isNotEmpty).toList(),
+      ),
     );
   }
 
@@ -1955,6 +2057,16 @@ class _GipPageState extends State<GipPage> with LocalizedPage {
                     _buildGipRow(tr('GIP permis'), _gipResult!['WGV_GIP_CGV_list0']),
                     const SizedBox(height: 8),
                     _buildGipTable(),
+                    const SizedBox(height: 16),
+                    _buildVolumesIndicatifs(),
+                    const SizedBox(height: 16),
+                    _buildInterruptibleWGV(),
+                    const SizedBox(height: 16),
+                    _buildValeursGaranties(),
+                    const SizedBox(height: 16),
+                    _buildValeursRealistes(),
+                    const SizedBox(height: 16),
+                    _buildGrapheAuPlusTot(),
                   ],
                 ),
               ),
@@ -1964,6 +2076,198 @@ class _GipPageState extends State<GipPage> with LocalizedPage {
         ),
       ),
     );
+  }
+
+  String _fmt(dynamic v) {
+    if (v == null) return '-';
+    if (v is num) return v.toStringAsFixed(2);
+    return v.toString();
+  }
+
+  Widget _buildSectionTitleGip(String title) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 8, bottom: 6),
+      child: Row(children: [
+        Container(width: 4, height: 14, decoration: BoxDecoration(
+            color: kOrange, borderRadius: BorderRadius.circular(2))),
+        const SizedBox(width: 8),
+        Text(title, style: const TextStyle(color: Colors.white,
+            fontWeight: FontWeight.bold, fontSize: 13)),
+      ]),
+    );
+  }
+
+  Widget _buildDataRow(String label, String value, {Color? valueColor}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(children: [
+        Expanded(child: Text(label, style: const TextStyle(
+            color: Colors.white70, fontSize: 10))),
+        Text(value, style: TextStyle(
+            color: valueColor ?? Colors.white, fontWeight: FontWeight.bold, fontSize: 10)),
+      ]),
+    );
+  }
+
+  Widget _buildVolumesIndicatifs() {
+    if (_gipResult == null) return const SizedBox();
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      _buildSectionTitleGip(tr('Volumes indicatifs')),
+      Container(padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.05),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.white12)),
+        child: Column(children: [
+          _buildDataRow(tr('Pression actuelle'), '${_fmt(_gipResult!["pressionActuelle"])} bar'),
+          _buildDataRow(tr('Pression moyenne permis'), '${_fmt(_gipResult!["pressionMoyennePermis"])} bar'),
+          _buildDataRow(tr('Volume actuel'), '${_fmt(_gipResult!["gipDernier"])} Mm³'),
+          _buildDataRow(tr('Volume moyen depuis début année gazière'), '${_fmt(_gipResult!["volumeMoyenDepuisDebut"])} Mm³'),
+          _buildDataRow(tr('Volume journalier moyen'), '${_fmt(_gipResult!["volumeJournalierMoyen"])} Mm³/j'),
+          _buildDataRow(tr('Dernier jour pour inj/souti'), '${_gipResult!["dernierJourInjSouti"] ?? "-"}'),
+        ]),
+      ),
+    ]);
+  }
+
+  Widget _buildInterruptibleWGV() {
+    if (_gipResult == null) return const SizedBox();
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      _buildSectionTitleGip(tr('Interruptible WGV')),
+      Container(padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.05),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.white12)),
+        child: Column(children: [
+          _buildDataRow(tr('Volume interruptible si injection'), '${_fmt(_gipResult!["interruptible_WGV_inj"])} Mm³/j'),
+          _buildDataRow(tr('Volume interruptible si soutirage'), '${_fmt(_gipResult!["interruptible_WGV_with"])} Mm³/j'),
+        ]),
+      ),
+    ]);
+  }
+
+  Widget _buildValeursGaranties() {
+    if (_gipResult == null) return const SizedBox();
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      _buildSectionTitleGip(tr('Valeurs garanties')),
+      Container(padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(color: kOrange.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: kOrange.withValues(alpha: 0.3))),
+        child: Column(children: [
+          Row(children: [
+            Expanded(child: Text('', style: const TextStyle(color: Colors.white54, fontSize: 9))),
+            Expanded(child: Text(tr('Avg Interr Sout MNm³'), textAlign: TextAlign.center,
+                style: const TextStyle(color: kOrange, fontWeight: FontWeight.bold, fontSize: 9))),
+            Expanded(child: Text(tr('Avg Interr Inj MNm³'), textAlign: TextAlign.center,
+                style: const TextStyle(color: kOrange, fontWeight: FontWeight.bold, fontSize: 9))),
+            Expanded(child: Text(tr('% vs volume total'), textAlign: TextAlign.center,
+                style: const TextStyle(color: kOrange, fontWeight: FontWeight.bold, fontSize: 9))),
+          ]),
+          const Divider(color: Colors.white12, height: 8),
+          Row(children: [
+            const Expanded(child: Text('', style: TextStyle(fontSize: 9))),
+            Expanded(child: Text(_fmt(_gipResult!["average_interruptible_withdrawal_guaranteed"]),
+                textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold))),
+            Expanded(child: Text(_fmt(_gipResult!["average_interruptible_injection_guaranteed"]),
+                textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold))),
+            Expanded(child: Text(_fmt(_gipResult!["vs_total_volume_withdrawal_guaranteed"]),
+                textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold))),
+          ]),
+        ]),
+      ),
+    ]);
+  }
+
+  Widget _buildValeursRealistes() {
+    if (_gipResult == null) return const SizedBox();
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      _buildSectionTitleGip(tr('Valeurs réalistes')),
+      Container(padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.05),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.white12)),
+        child: Column(children: [
+          Row(children: [
+            Expanded(child: Text('', style: const TextStyle(color: Colors.white54, fontSize: 9))),
+            Expanded(child: Text(tr('Avg Interr Sout MNm³'), textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.white70, fontWeight: FontWeight.bold, fontSize: 9))),
+            Expanded(child: Text(tr('Avg Interr Inj MNm³'), textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.white70, fontWeight: FontWeight.bold, fontSize: 9))),
+            Expanded(child: Text(tr('% vs volume total'), textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.white70, fontWeight: FontWeight.bold, fontSize: 9))),
+          ]),
+          const Divider(color: Colors.white12, height: 8),
+          Row(children: [
+            const Expanded(child: Text('', style: TextStyle(fontSize: 9))),
+            Expanded(child: Text(_fmt(_gipResult!["average_interruptible_withdrawal_realist"]),
+                textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold))),
+            Expanded(child: Text(_fmt(_gipResult!["average_interruptible_injection_realist"]),
+                textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold))),
+            Expanded(child: Text(_fmt(_gipResult!["vs_total_volume_withdrawal_realist"]),
+                textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold))),
+          ]),
+        ]),
+      ),
+    ]);
+  }
+
+  Widget _buildGrapheAuPlusTot() {
+    if (_gipResult == null) return const SizedBox();
+    final injSerie  = (_gipResult!['serieInjectionAuPlusTot']  as List<dynamic>?) ?? [];
+    final soutiSerie = (_gipResult!['serieSoutirageAuPlusTot'] as List<dynamic>?) ?? [];
+    if (injSerie.isEmpty && soutiSerie.isEmpty) return const SizedBox();
+
+    List<FlSpot> injSpots  = [];
+    List<FlSpot> soutiSpots = [];
+    for (int i = 0; i < injSerie.length; i++) {
+      final pt = injSerie[i] as List<dynamic>;
+      if (pt.length >= 2) injSpots.add(FlSpot(i.toDouble(), (pt[1] as num).toDouble()));
+    }
+    for (int i = 0; i < soutiSerie.length; i++) {
+      final pt = soutiSerie[i] as List<dynamic>;
+      if (pt.length >= 2) soutiSpots.add(FlSpot(i.toDouble(), (pt[1] as num).toDouble()));
+    }
+
+    final all = [...injSpots, ...soutiSpots];
+    if (all.isEmpty) return const SizedBox();
+    final minY = all.map((s) => s.y).reduce((a, b) => a < b ? a : b);
+    final maxY = all.map((s) => s.y).reduce((a, b) => a > b ? a : b);
+    final pad  = (maxY - minY) * 0.1 + 1;
+
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      _buildSectionTitleGip(tr('Injection / Soutirage au plus tôt')),
+      Row(children: [
+        Container(width: 10, height: 10, color: Colors.blueAccent, margin: const EdgeInsets.only(right: 4)),
+        const Text('Injection', style: TextStyle(color: Colors.white70, fontSize: 10)),
+        const SizedBox(width: 10),
+        Container(width: 10, height: 10, color: Colors.redAccent, margin: const EdgeInsets.only(right: 4)),
+        const Text('Soutirage', style: TextStyle(color: Colors.white70, fontSize: 10)),
+        const Spacer(),
+        const Text('bar', style: TextStyle(color: Colors.white54, fontSize: 10)),
+      ]),
+      const SizedBox(height: 6),
+      SizedBox(height: 180, child: LineChart(LineChartData(
+        minY: minY - pad, maxY: maxY + pad,
+        gridData: FlGridData(show: true,
+          getDrawingHorizontalLine: (_) => FlLine(color: Colors.white12, strokeWidth: 1),
+          getDrawingVerticalLine: (_) => FlLine(color: Colors.white12, strokeWidth: 1)),
+        titlesData: FlTitlesData(
+          leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 40,
+            getTitlesWidget: (v, _) => Text(v.toStringAsFixed(0),
+                style: const TextStyle(color: Colors.white54, fontSize: 8)))),
+          bottomTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+        ),
+        borderData: FlBorderData(show: true, border: Border.all(color: Colors.white24)),
+        lineBarsData: [
+          if (injSpots.isNotEmpty) LineChartBarData(spots: injSpots,
+              color: Colors.blueAccent, barWidth: 1.5, dotData: const FlDotData(show: false)),
+          if (soutiSpots.isNotEmpty) LineChartBarData(spots: soutiSpots,
+              color: Colors.redAccent, barWidth: 1.5, dotData: const FlDotData(show: false)),
+        ],
+      ))),
+    ]);
   }
 }
 // ─────────────────────────────────────────────
@@ -2933,17 +3237,35 @@ class _PoolSimulationPageState extends State<PoolSimulationPage> with LocalizedP
       return Text(tr('Aucun résultat disponible'),
           style: const TextStyle(color: Colors.white54));
     }
-    // Agrégat pool : somme des WGV/GIP/CGV sur tous les scénarios MAX (list11)
-    double totalWGV = 0, totalGIP = 0, totalCGV = 0, totalGIPPermis = 0;
+    // Agrégat pool : sommer l1-l8 par caverne, puis calculer garanties/min/max sur les agrégés
+    double totalGIPPermis = 0;
     for (final res in _gipResultsPool) {
       totalGIPPermis += (res['WGV_GIP_CGV_list0'] as num? ?? 0).toDouble();
-      final l11 = res['WGV_GIP_CGV_list11'] as List<dynamic>?;
-      if (l11 != null && l11.length >= 3) {
-        totalWGV += (l11[0] as num).toDouble();
-        totalGIP += (l11[1] as num).toDouble();
-        totalCGV += (l11[2] as num).toDouble();
-      }
     }
+    // Scénarios agrégés l1-l8 (somme sur les 4 cavernes)
+    final scenKeys = ['WGV_GIP_CGV_list1','WGV_GIP_CGV_list2','WGV_GIP_CGV_list3','WGV_GIP_CGV_list4',
+                      'WGV_GIP_CGV_list5','WGV_GIP_CGV_list6','WGV_GIP_CGV_list7','WGV_GIP_CGV_list8'];
+    final agreg = <List<double>>[];
+    for (final key in scenKeys) {
+      double w = 0, g = 0, c = 0;
+      for (final res in _gipResultsPool) {
+        final v = res[key] as List<dynamic>?;
+        if (v != null && v.length >= 3) {
+          w += (v[0] as num).toDouble();
+          g += (v[1] as num).toDouble();
+          c += (v[2] as num).toDouble();
+        }
+      }
+      agreg.add([w, g, c]);
+    }
+    // Valeurs garanties : WGV=min(WGV), CGV=max(CGV) des 8 scénarios agrégés
+    final minWGV = agreg.isEmpty ? 0.0 : agreg.map((l) => l[0]).reduce((a,b) => a<b?a:b);
+    final maxCGV = agreg.isEmpty ? 0.0 : agreg.map((l) => l[2]).reduce((a,b) => a>b?a:b);
+    final totalWGV = minWGV, totalCGV = maxCGV, totalGIP = minWGV + maxCGV;
+    // Valeurs maximales : WGV=max(WGV), CGV=max(CGV)
+    final maxWGV = agreg.isEmpty ? 0.0 : agreg.map((l) => l[0]).reduce((a,b) => a>b?a:b);
+    // Valeurs minimales : WGV=min(WGV), CGV=min(CGV)
+    final minCGV = agreg.isEmpty ? 0.0 : agreg.map((l) => l[2]).reduce((a,b) => a<b?a:b);
     final labels = [
       tr('Pmax permis / Débit souti max'), tr('Pmax permis / Débit souti min'),
       tr('Pmin permis / Débit souti max'), tr('Pmin permis / Débit souti min'),
@@ -2990,7 +3312,20 @@ class _PoolSimulationPageState extends State<PoolSimulationPage> with LocalizedP
         _buildSectionTitle(tr('Détail par caverne')),
         ..._gipResultsPool.map((res) {
           final cavName = res['CavityName'] ?? '';
-          final l11 = res['WGV_GIP_CGV_list11'] as List<dynamic>?;
+          // Calculer garanties par caverne : min WGV et max CGV des scénarios l1-l8
+          final cavKeys = ['WGV_GIP_CGV_list1','WGV_GIP_CGV_list2','WGV_GIP_CGV_list3','WGV_GIP_CGV_list4',
+                           'WGV_GIP_CGV_list5','WGV_GIP_CGV_list6','WGV_GIP_CGV_list7','WGV_GIP_CGV_list8'];
+          double cavMinWGV = double.maxFinite, cavMaxCGV = 0;
+          for (final k in cavKeys) {
+            final v = res[k] as List<dynamic>?;
+            if (v != null && v.length >= 3) {
+              final w = (v[0] as num).toDouble();
+              final c = (v[2] as num).toDouble();
+              if (w < cavMinWGV) cavMinWGV = w;
+              if (c > cavMaxCGV) cavMaxCGV = c;
+            }
+          }
+          if (cavMinWGV == double.maxFinite) cavMinWGV = 0;
           return Container(
             margin: const EdgeInsets.only(bottom: 8),
             padding: const EdgeInsets.all(10),
@@ -3008,50 +3343,98 @@ class _PoolSimulationPageState extends State<PoolSimulationPage> with LocalizedP
                 Text('GIP: ${_fmt(res["WGV_GIP_CGV_list0"])} Mm³',
                     style: const TextStyle(color: Colors.white70, fontSize: 11)),
               ]),
-              if (l11 != null && l11.length >= 3) ...[
-                const SizedBox(height: 6),
-                Row(children: [
-                  _gipCell('WGV max', (l11[0] as num).toStringAsFixed(2)),
-                  const SizedBox(width: 8),
-                  _gipCell('GIP max', (l11[1] as num).toStringAsFixed(2)),
-                  const SizedBox(width: 8),
-                  _gipCell('CGV max', (l11[2] as num).toStringAsFixed(2)),
-                ]),
-              ],
+              const SizedBox(height: 6),
+              Row(children: [
+                _gipCell('WGV', cavMinWGV.toStringAsFixed(2)),
+                const SizedBox(width: 8),
+                _gipCell('GIP', (cavMinWGV + cavMaxCGV).toStringAsFixed(2)),
+                const SizedBox(width: 8),
+                _gipCell('CGV', cavMaxCGV.toStringAsFixed(2)),
+              ]),
             ]),
           );
         }).toList(),
         const SizedBox(height: 8),
-        // ── Tableau 14 scénarios de la première caverne ──
-        _buildSectionTitle(tr('Scénarios détaillés')),
-        ...List.generate(14, (i) {
-          final key = 'WGV_GIP_CGV_list\${i + 1}';
-          final vals = _gipResultsPool.first[key] as List<dynamic>?;
-          if (vals == null || vals.length < 3) return const SizedBox();
-          final isHighlight = i == 10 || i == 11;
-          return Container(
-            margin: const EdgeInsets.only(bottom: 4),
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-            decoration: BoxDecoration(
-              color: isHighlight ? kOrange.withValues(alpha: 0.15) : Colors.white.withValues(alpha: 0.05),
-              borderRadius: BorderRadius.circular(6),
-            ),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(labels[i], style: TextStyle(
-                color: isHighlight ? kOrange : Colors.white54, fontSize: 10,
-                fontWeight: isHighlight ? FontWeight.bold : FontWeight.normal,
-              )),
-              const SizedBox(height: 2),
-              Row(children: [
-                _gipCell('WGV', (vals[0] as num).toStringAsFixed(2)),
-                const SizedBox(width: 8),
-                _gipCell('GIP', (vals[1] as num).toStringAsFixed(2)),
-                const SizedBox(width: 8),
-                _gipCell('CGV', (vals[2] as num).toStringAsFixed(2)),
-              ]),
-            ]),
-          );
-        }),
+        // ── Tableau agrégé 14 scénarios (somme des 4 cavités) ──
+        _buildSectionTitle(tr('Scénarios détaillés — Pool agrégé')),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: DataTable(
+            headingRowColor: WidgetStateProperty.all(kBleuMoyen),
+            dataRowMinHeight: 28, dataRowMaxHeight: 36,
+            columnSpacing: 12,
+            headingTextStyle: const TextStyle(color: kOrange, fontWeight: FontWeight.bold, fontSize: 10),
+            dataTextStyle: const TextStyle(color: Colors.white, fontSize: 10),
+            columns: [
+              DataColumn(label: Text(tr('Scénario'), style: const TextStyle(color: kOrange, fontWeight: FontWeight.bold, fontSize: 10))),
+              DataColumn(label: const Text('WGV'), numeric: true),
+              DataColumn(label: const Text('CGV'), numeric: true),
+              DataColumn(label: const Text('GIP'), numeric: true),
+            ],
+            rows: () {
+              // Clés des scénarios dans l'ordre standalone
+              final rows = <DataRow>[];
+              // Lignes garanties/min/max calculées côté Flutter sur les agrégés
+              final fixedRows = [
+                [tr('Valeurs garanties'), totalWGV, totalGIP, totalCGV],
+                [tr('Valeurs minimales'), minWGV,   minWGV + minCGV, minCGV],
+                [tr('Valeurs maximales'), maxWGV,   maxWGV + maxCGV, maxCGV],
+              ];
+              for (final r in fixedRows) {
+                rows.add(DataRow(
+                  color: WidgetStateProperty.all(kOrange.withValues(alpha: 0.15)),
+                  cells: [
+                    DataCell(Text(r[0] as String, style: const TextStyle(color: kOrange, fontWeight: FontWeight.bold, fontSize: 9.5))),
+                    DataCell(Text((r[1] as double).toStringAsFixed(2), style: const TextStyle(color: Colors.red, fontSize: 10))),
+                    DataCell(Text((r[3] as double).toStringAsFixed(2), style: const TextStyle(color: Colors.red, fontSize: 10))),
+                    DataCell(Text((r[2] as double).toStringAsFixed(2), style: const TextStyle(color: Colors.red, fontSize: 10))),
+                  ],
+                ));
+              }
+              // Lignes scénarios : somme sur les 4 cavernes
+              final scenKeys2 = [
+                'WGV_GIP_CGV_list1','WGV_GIP_CGV_list2',
+                'WGV_GIP_CGV_list3','WGV_GIP_CGV_list4',
+                'WGV_GIP_CGV_list5','WGV_GIP_CGV_list6',
+                'WGV_GIP_CGV_list7','WGV_GIP_CGV_list8',
+                'WGV_GIP_CGV_list9','WGV_GIP_CGV_list10',
+                'WGV_GIP_CGV_list13','WGV_GIP_CGV_list14',
+              ];
+              final scenLabels2 = [
+                tr('Pmax permis(Qmax)'), tr('Pmax permis(Qmin)'),
+                tr('Pmin permis(Qmax)'), tr('Pmin permis(Qmin)'),
+                tr('Pmax histo(Qmax)'), tr('Pmax histo(Qmin)'),
+                tr('Pmin histo(Qmax)'), tr('Pmin histo(Qmin)'),
+                tr('Dernière P inj(Qmax)'), tr('Dernière P inj(Qmin)'),
+                tr('Dernière P souti(Qmax)'), tr('Dernière P souti(Qmin)'),
+              ];
+              for (int i = 0; i < scenKeys2.length; i++) {
+                double totWGV = 0, totGIP = 0, totCGV = 0;
+                bool hasData = false;
+                for (final res in _gipResultsPool) {
+                  final v = res[scenKeys2[i]] as List<dynamic>?;
+                  if (v != null && v.length >= 3) {
+                    totWGV += (v[0] as num).toDouble();
+                    totGIP += (v[1] as num).toDouble();
+                    totCGV += (v[2] as num).toDouble();
+                    hasData = true;
+                  }
+                }
+                if (!hasData) continue;
+                rows.add(DataRow(
+                  color: WidgetStateProperty.all(Colors.transparent),
+                  cells: [
+                    DataCell(Text(scenLabels2[i], style: const TextStyle(color: Colors.white70, fontSize: 9.5))),
+                    DataCell(Text(totWGV.toStringAsFixed(2), style: const TextStyle(color: Colors.white, fontSize: 10))),
+                    DataCell(Text(totCGV.toStringAsFixed(2), style: const TextStyle(color: Colors.white, fontSize: 10))),
+                    DataCell(Text(totGIP.toStringAsFixed(2), style: const TextStyle(color: Colors.white, fontSize: 10))),
+                  ],
+                ));
+              }
+              return rows;
+            }(),
+          ),
+        ),
         const SizedBox(height: 16),
         SizedBox(
           width: double.infinity,
