@@ -219,6 +219,7 @@ class _SitesListPageState extends State<SitesListPage> with LocalizedPage {
       if (response.statusCode == 200) {
         setState(() {
           _sites = jsonDecode(response.body);
+          _sites.sort((a, b) => (a['nom'] ?? '').toString().compareTo((b['nom'] ?? '').toString()));
           _isLoading = false;
         });
       } else {
@@ -429,6 +430,7 @@ class _CavitePageState extends State<CavitePage> with LocalizedPage {
 
   // Simulation
   bool _isSimulating = false;
+  List<dynamic> _simulationData = [];
   bool _simulationDone = false;
   List<FlSpot> _presReelSpots = [];
   List<FlSpot> _presSimuleSpots = [];
@@ -436,6 +438,7 @@ class _CavitePageState extends State<CavitePage> with LocalizedPage {
   List<FlSpot> _tempSimuleSpots = [];
   List<FlSpot> _debitSpots = [];
   List<FlSpot> _stockSpots = [];
+  List<Map<String, dynamic>> _debitVolumePoints = [];
   List<FlSpot> _pCasingShoeSpots = [];
   List<FlSpot> _tCasingShoeSpots = [];
   List<FlSpot> _pCavernSpots = [];
@@ -573,6 +576,7 @@ class _CavitePageState extends State<CavitePage> with LocalizedPage {
         final List<FlSpot> tempSimule = [];
         final List<FlSpot> debit = [];
         final List<FlSpot> stock = [];
+        final List<Map<String, dynamic>> debitVolume = [];
         final List<double> presReelVals = [];
         final List<double> presSimVals = [];
         final List<double> tempReelVals = [];
@@ -596,6 +600,13 @@ class _CavitePageState extends State<CavitePage> with LocalizedPage {
             if (db != null) { final y = (db as num).toDouble(); debit.add(FlSpot(x, y)); }
             final vol = point['volume'];
             if (vol != null) { final y = (vol as num).toDouble(); stock.add(FlSpot(x, y)); }
+            if (db != null && vol != null) {
+              debitVolume.add({
+                'date': point['date'].toString().substring(0, 10),
+                'debit': (db as num).toDouble(),
+                'volume': (vol as num).toDouble(),
+              });
+            }
           } catch (_) {}
         }
 
@@ -608,12 +619,14 @@ class _CavitePageState extends State<CavitePage> with LocalizedPage {
           _tempSimuleSpots = tempSimule;
           _debitSpots = debit;
           _stockSpots = stock;
+          _debitVolumePoints = debitVolume;
           _statsPression = StatsCalage.compute(presReelVals, presSimVals);
           _statsTemp = StatsCalage.compute(tempReelVals, tempSimVals);
           _simDateFrom = dateFrom;
           _simDateTo = dateTo;
           _isSimulating = false;
           _simulationDone = true;
+          _simulationData = data;
         });
 
         // ── Étape 4 : appel fullcavity (CasingShoe + Cavern) ──
@@ -1110,21 +1123,15 @@ class _CavitePageState extends State<CavitePage> with LocalizedPage {
                 _buildStatsRow(_statsTemp!),
               ],
               const SizedBox(height: 16),
-              // ── Débits ──
-              _buildSectionTitle(tr('Débit journalier')),
+              // ── Débit / Volume stocké (groupés) ──
+              _buildSectionTitle(tr('Débit / Volume stocké')),
               const SizedBox(height: 8),
-              _buildSimpleSimChart(
-                spots: _debitSpots,
-                lineColor: kJaune,
-                unite: 'Mm³/j',
-              ),
-              const SizedBox(height: 16),
-              _buildSectionTitle(tr('Volume stocké')),
-              const SizedBox(height: 8),
-              _buildSimpleSimChart(
-                spots: _stockSpots,
-                lineColor: kVert,
-                unite: 'Mm³',
+              _InteractiveChart(
+                points: _debitVolumePoints,
+                series: const [
+                  _SeriesSpec(valueKey: 'volume', color: kVert, unit: 'Vol (Mm³)'),
+                  _SeriesSpec(valueKey: 'debit',  color: kJaune, unit: 'Q (Mm³/j)'),
+                ],
               ),
               const SizedBox(height: 16),
               _buildSectionTitle(tr('Pression Casing Shoe')),
@@ -1240,6 +1247,22 @@ class _CavitePageState extends State<CavitePage> with LocalizedPage {
       if (v != null) spots.add(FlSpot(i.toDouble(), (v as num).toDouble()));
     }
     return spots;
+  }
+
+  List<Map<String, dynamic>> _buildDebitVolumePointsHisto() {
+    final points = <Map<String, dynamic>>[];
+    for (final row in _realData) {
+      final vol = row['volume'];
+      final db  = row['debit'];
+      if (vol != null && db != null) {
+        points.add({
+          'date':   (row['date']?.toString() ?? '').length >= 10 ? row['date'].toString().substring(0, 10) : (row['date']?.toString() ?? ''),
+          'volume': (vol as num).toDouble(),
+          'debit':  (db as num).toDouble(),
+        });
+      }
+    }
+    return points;
   }
 
   String _labelX(int index) {
@@ -1601,10 +1624,13 @@ class _CavitePageState extends State<CavitePage> with LocalizedPage {
                             _buildChart(title: tr('Température tête de puits'),
                                 spots: _buildSpotsTemperature(), lineColor: kRouge, uniteY: '°C'),
                             _buildSectionTitle(tr('Volume stocké - Volume journalier')),
-                            _buildChart(title: tr('Volume stocké'),
-                                spots: _buildSpotsVolume(), lineColor: kVert, uniteY: 'Mm³'),
-                            _buildChart(title: tr('Débit journalier'),
-                                spots: _buildSpotsDebit(), lineColor: kJaune, uniteY: 'Mm³/j'),
+                            _InteractiveChart(
+                              points: _buildDebitVolumePointsHisto(),
+                              series: const [
+                                _SeriesSpec(valueKey: 'volume', color: kVert, unit: 'Vol (Mm³)'),
+                                _SeriesSpec(valueKey: 'debit',  color: kJaune, unit: 'Q (Mm³/j)'),
+                              ],
+                            ),
                           ],
                           const SizedBox(height: 12),
                           // ── Caractéristiques cavité ──
@@ -1665,6 +1691,108 @@ class _CavitePageState extends State<CavitePage> with LocalizedPage {
                               child: Center(child: CircularProgressIndicator(color: kOrange)),
                             ),
                           _buildSimulationResults(),
+                          const SizedBox(height: 8),
+                          // ── Bouton simulation future ──
+                          SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton.icon(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: kOrange,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(vertical: 14),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              ),
+                              icon: const Icon(Icons.arrow_forward, size: 18),
+                              label: Text(tr('Simulation future'),
+                                  style: const TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1)),
+                              onPressed: _isSimulating ? null : () async {
+                                // Lancer simulation (mode caché) si pas encore fait
+                                if (!_simulationDone) {
+                                  await _lancerSimulation();
+                                }
+                                if (!mounted) return;
+                                if (_simulationData.isEmpty) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(content: Text('Impossible de lancer la simulation. Vérifiez le calage.')),
+                                  );
+                                  return;
+                                }
+                                // Le GIP n'est pas un champ de la cavité : il doit être calculé
+                                // via /api/gip/{cavityId} (même endpoint que "Calculer GIP / WGV / CGV")
+                                double gipValue = 0.0;
+                                try {
+                                  final cavityId = _cavite!['id'];
+                                  final uri = Uri.parse('$kBaseUrl/api/gip/$cavityId');
+                                  final response = await http.get(uri).timeout(const Duration(seconds: 120));
+                                  if (response.statusCode == 200) {
+                                    final gipJson = jsonDecode(response.body);
+                                    gipValue = double.tryParse(gipJson['WGV_GIP_CGV_list0'].toString()) ?? 0.0;
+                                  }
+                                } catch (_) {}
+                                if (!mounted) return;
+                                if (gipValue <= 0.0) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(content: Text('Impossible de récupérer le GIP de la cavité.')),
+                                  );
+                                  return;
+                                }
+                                Navigator.push(context, MaterialPageRoute(
+                                  builder: (_) => FutureSimulationPage(
+                                    cavityId: _cavite!['id'],
+                                    cavityName: _cavite!['CavityName'] ?? '',
+                                    siteName: widget.siteName,
+                                    gip: gipValue,
+                                    realData: _simulationData.cast<Map<String, dynamic>>(),
+                                  ),
+                                ));
+                              },
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          // ── Bouton GIP/WGV/CGV ──
+                          SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton.icon(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: kOrange,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(vertical: 14),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              ),
+                              icon: const Icon(Icons.calculate, size: 18),
+                              label: Text(tr('Calculer GIP / WGV / CGV'),
+                                  style: const TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1)),
+                              onPressed: () {
+                                Navigator.push(context, MaterialPageRoute(
+                                  builder: (_) => GipPage(cavite: _cavite!, siteName: widget.siteName),
+                                ));
+                              },
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          // ── Bouton interruptibles ──
+                          SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton.icon(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: kOrange,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(vertical: 14),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              ),
+                              icon: const Icon(Icons.pause_circle_outline, size: 18),
+                              label: Text(tr('Interruptibles et obligations'),
+                                  style: const TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1)),
+                              onPressed: () {
+                                Navigator.push(context, MaterialPageRoute(
+                                  builder: (_) => InterruptiblesPage(
+                                    cavityId: _cavite!['id'],
+                                    cavityName: _cavite!['CavityName'] ?? '',
+                                  ),
+                                ));
+                              },
+                            ),
+                          ),
                           const SizedBox(height: 24),
                           // ── Menu Caverne ──
                           _buildSectionTitle(tr('Fonctions avancées')),
@@ -1685,7 +1813,7 @@ class _CavitePageState extends State<CavitePage> with LocalizedPage {
       {'label': tr('Données importées'), 'icon': Icons.upload_file, 'active': false},
       {'label': tr('Tableau Injection / Soutirage'), 'icon': Icons.table_chart, 'active': false},
       {'label': tr('Calages et simulations'), 'icon': Icons.tune, 'active': false},
-      {'label': tr('Calcul paramètres opérationnels'), 'icon': Icons.calculate, 'active': true},
+      {'label': tr('Calcul paramètres opérationnels'), 'icon': Icons.calculate, 'active': false},
       {'label': tr('Calcul P/T puits / cavité'), 'icon': Icons.compress, 'active': false},
       {'label': tr('Intégrité cavité'), 'icon': Icons.security, 'active': false},
       {'label': tr('Calculs multi-cavités'), 'icon': Icons.account_tree, 'active': true},
@@ -1827,6 +1955,12 @@ class _GipPageState extends State<GipPage> with LocalizedPage {
   bool _isCalculatingGip = false;
   bool _gipDone = false;
   Map<String, dynamic>? _gipResult;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _calculerGip());
+  }
 
   Future<void> _calculerGip() async {
     setState(() { _isCalculatingGip = true; _gipDone = false; });
@@ -2024,24 +2158,12 @@ class _GipPageState extends State<GipPage> with LocalizedPage {
               ),
             ),
             const SizedBox(height: 16),
-            // Bouton calcul
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: _isCalculatingGip ? null : _calculerGip,
-                icon: _isCalculatingGip
-                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                    : const Icon(Icons.calculate, size: 18),
-                label: Text(_isCalculatingGip ? tr('Calcul en cours...') : tr('Calculer GIP / WGV / CGV'),
-                    style: const TextStyle(fontWeight: FontWeight.bold)),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: kOrange,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
+            // Indicateur de chargement
+            if (_isCalculatingGip)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 24),
+                child: Center(child: CircularProgressIndicator(color: kOrange)),
               ),
-            ),
             // Résultats GIP
             if (_gipDone && _gipResult != null) ...[
               _buildSectionTitle(tr('GIP / WGV / CGV')),
@@ -2058,15 +2180,7 @@ class _GipPageState extends State<GipPage> with LocalizedPage {
                     const SizedBox(height: 8),
                     _buildGipTable(),
                     const SizedBox(height: 16),
-                    _buildVolumesIndicatifs(),
-                    const SizedBox(height: 16),
-                    _buildInterruptibleWGV(),
-                    const SizedBox(height: 16),
-                    _buildValeursGaranties(),
-                    const SizedBox(height: 16),
-                    _buildValeursRealistes(),
-                    const SizedBox(height: 16),
-                    _buildGrapheAuPlusTot(),
+      
                   ],
                 ),
               ),
@@ -2139,7 +2253,7 @@ class _GipPageState extends State<GipPage> with LocalizedPage {
             border: Border.all(color: Colors.white12)),
         child: Column(children: [
           _buildDataRow(tr('Volume interruptible si injection'), '${_fmt(_gipResult!["interruptible_WGV_inj"])} Mm³/j'),
-          _buildDataRow(tr('Volume interruptible si soutirage'), '${_fmt(_gipResult!["interruptible_WGV_with"])} Mm³/j'),
+          _buildDataRow(tr('Volume interruptible si soutirage'), '${(-(_gipResult!["interruptible_WGV_with"] as num? ?? 0).toDouble()).toStringAsFixed(2)} Mm³/j'),
         ]),
       ),
     ]);
@@ -2553,6 +2667,8 @@ class _PoolSimulationPageState extends State<PoolSimulationPage> with LocalizedP
   List<FlSpot> _serieTempSim = [];
   List<FlSpot> _serieVolume = [];
   List<FlSpot> _serieDebit = [];
+  List<Map<String, dynamic>> _serieVolumeDebitPoints = [];
+  List<Map<String, dynamic>> _allPoolPoints = []; // date+pression+température+volume+débit fusionnés
 
   // Étape 2 — résultats GIP/WGV/CGV pool
   bool _loadingGip = false;
@@ -2562,8 +2678,6 @@ class _PoolSimulationPageState extends State<PoolSimulationPage> with LocalizedP
   // Ratchet — calcul débits maximaux
   bool _loadingRatchet = false;
   Map<String, dynamic>? _ratchetResult1;
-  Map<String, dynamic>? _ratchetResult2;
-  Map<String, dynamic>? _ratchetResult3;
   bool _showRatchet = false;
   List<Map<String, dynamic>> _details = [];
 
@@ -2661,6 +2775,13 @@ class _PoolSimulationPageState extends State<PoolSimulationPage> with LocalizedP
           _serieTempSim  = _toSpots(parsed[4] as List);
           _serieVolume   = _toSpots(parsed[5] as List);
           _serieDebit    = _toSpots(parsed[6] as List);
+          _serieVolumeDebitPoints = _toCombinedPoints(parsed[5] as List, parsed[6] as List);
+          // Fusion de toutes les séries en points complets (même index garanti)
+          _allPoolPoints = _toFullPoints(
+            parsed[1] as List, parsed[2] as List,
+            parsed[3] as List, parsed[4] as List,
+            parsed[5] as List, parsed[6] as List,
+          );
           _simulating = false;
           _step = 1;
         });
@@ -2724,15 +2845,22 @@ class _PoolSimulationPageState extends State<PoolSimulationPage> with LocalizedP
           _gipResult = parsed.isNotEmpty ? Map<String, dynamic>.from(parsed[0] as Map) : {};
           _gipResultsPool = parsed.map((e) => Map<String, dynamic>.from(e as Map)).toList();
           _loadingGip = false;
-          _step = 2;
         });
+        if (mounted) {
+          Navigator.push(context, MaterialPageRoute(
+            builder: (_) => GipPoolResultPage(
+              siteName: widget.siteName,
+              gipResultsPool: _gipResultsPool,
+            ),
+          ));
+        }
       } else {
-        setState(() => _loadingGip = false);
+        setState(() { _loadingGip = false; });
         if (mounted) _showError('Erreur GIP pool: ${response.statusCode}');
       }
     } catch (e) {
-      setState(() => _loadingGip = false);
-      if (mounted) _showError('Erreur: $e');
+      setState(() { _loadingGip = false; });
+      if (mounted) _showError('Erreur catch: $e');
     }
   }
 
@@ -2961,6 +3089,72 @@ class _PoolSimulationPageState extends State<PoolSimulationPage> with LocalizedP
     return spots;
   }
 
+  // Combine deux séries (volume, débit) point à point pour le graphe groupé
+  List<Map<String, dynamic>> _toCombinedPoints(List<dynamic> volSerie, List<dynamic> debSerie) {
+    final points = <Map<String, dynamic>>[];
+    final n = volSerie.length < debSerie.length ? volSerie.length : debSerie.length;
+    for (int i = 0; i < n; i++) {
+      final vy = (volSerie[i] as Map)['y'];
+      final dy = (debSerie[i] as Map)['y'];
+      if (vy != null && vy != 'null' && dy != null && dy != 'null') {
+        points.add({
+          'date':   'J${i + 1}',
+          'volume': (vy as num).toDouble(),
+          'debit':  (dy as num).toDouble(),
+        });
+      }
+    }
+    return points;
+  }
+
+  // Fusionne les 6 séries en points complets indexés
+  List<Map<String, dynamic>> _toFullPoints(
+    List<dynamic> presReel, List<dynamic> presSim,
+    List<dynamic> tempReel, List<dynamic> tempSim,
+    List<dynamic> vol, List<dynamic> deb,
+  ) {
+    final points = <Map<String, dynamic>>[];
+    final n = [presReel, presSim, tempReel, tempSim, vol, deb]
+        .map((l) => l.length).reduce((a, b) => a < b ? a : b);
+    for (int i = 0; i < n; i++) {
+      // Convertir "2019,7,13" → "2019-07-13"
+      final rawX = (presReel[i] as Map)['x']?.toString() ?? '';
+      String pr;
+      if (rawX.contains(',')) {
+        final parts = rawX.split(',');
+        pr = '${parts[0]}-${parts[1].padLeft(2,'0')}-${parts[2].padLeft(2,'0')}';
+      } else {
+        pr = rawX.isNotEmpty ? rawX : 'J${i+1}';
+      }
+      final ps = (presSim[i] as Map)['y'];
+      final prr = (presReel[i] as Map)['y'];
+      final ts = (tempSim[i] as Map)['y'];
+      final tr = (tempReel[i] as Map)['y'];
+      final vy = (vol[i] as Map)['y'];
+      final dy = (deb[i] as Map)['y'];
+      if (vy == null || vy == 'null' || dy == null || dy == 'null') continue;
+      double pression = 0, temperature = 0;
+      if (ps != null && ps != 'null' && (ps as num).toDouble() != 0) {
+        pression = (ps as num).toDouble();
+      } else if (prr != null && prr != 'null') {
+        pression = (prr as num).toDouble();
+      }
+      if (ts != null && ts != 'null' && (ts as num).toDouble() != 0) {
+        temperature = (ts as num).toDouble();
+      } else if (tr != null && tr != 'null') {
+        temperature = (tr as num).toDouble();
+      }
+      points.add({
+        'date':        pr,
+        'pression':    pression,
+        'temperature': temperature,
+        'volume':      (vy as num).toDouble(),
+        'debit':       (dy as num).toDouble(),
+      });
+    }
+    return points;
+  }
+
   // Étape 1 — résultats simulation + détails cavernes
   Widget _buildSimulationStep() {
     return Column(
@@ -2993,51 +3187,19 @@ class _PoolSimulationPageState extends State<PoolSimulationPage> with LocalizedP
           ),
         ),
         // Détails cavernes
-        if (_details.isNotEmpty) ...[ 
+        if (_details.isNotEmpty) ...[
           _buildSectionTitle(tr('Détails par caverne')),
           ..._details.map((d) => _buildDetailCard(d)),
         ],
         // Graphes P/T/V
-        if (_seriePresReel.isNotEmpty || _seriePresSim.isNotEmpty) ...[
-          _buildSectionTitle(tr('Pression moyenne tête de puits')),
-          _buildPoolChart(
-            reelSpots: _seriePresReel,
-            simSpots: _seriePresSim,
-            reelColor: kOrange,
-            simColor: Colors.blueAccent,
-            unite: 'bar',
-          ),
+        if (_seriePresReel.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          _buildPoolChart(unite: tr('Pression (bar)'), reelSpots: _seriePresReel, simSpots: _seriePresSim, reelColor: Colors.blue, simColor: Colors.lightBlueAccent),
+          _buildPoolChart(unite: tr('Température (°C)'), reelSpots: _serieTempReel, simSpots: _serieTempSim, reelColor: Colors.orange, simColor: Colors.orangeAccent),
+          _buildPoolChart(unite: tr('Volume (Mm³)'), reelSpots: _serieVolume, simSpots: const [], reelColor: Colors.green, simColor: Colors.green),
+          _buildPoolChart(unite: tr('Débit (Mm³/j)'), reelSpots: _serieDebit, simSpots: const [], reelColor: Colors.purple, simColor: Colors.purple),
         ],
-        if (_serieTempReel.isNotEmpty || _serieTempSim.isNotEmpty) ...[
-          _buildSectionTitle(tr('Température moyenne tête de puits')),
-          _buildPoolChart(
-            reelSpots: _serieTempReel,
-            simSpots: _serieTempSim,
-            reelColor: kOrange,
-            simColor: Colors.greenAccent,
-            unite: '°C',
-          ),
-        ],
-        if (_serieVolume.isNotEmpty) ...[
-          _buildSectionTitle(tr('Volume stocké total')),
-          _buildPoolChart(
-            reelSpots: _serieVolume,
-            simSpots: const [],
-            reelColor: kVert,
-            simColor: kVert,
-            unite: 'Mm³',
-          ),
-        ],
-        if (_serieDebit.isNotEmpty) ...[
-          _buildSectionTitle(tr('Débit total')),
-          _buildPoolChart(
-            reelSpots: _serieDebit,
-            simSpots: const [],
-            reelColor: kJaune,
-            simColor: kJaune,
-            unite: 'Mm³/j',
-          ),
-        ],
+
         const SizedBox(height: 16),
         // Bouton calcul GIP pool
         SizedBox(
@@ -3048,7 +3210,7 @@ class _PoolSimulationPageState extends State<PoolSimulationPage> with LocalizedP
                 ? const SizedBox(width: 16, height: 16,
                     child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                 : const Icon(Icons.calculate, size: 18),
-            label: Text(_loadingGip ? tr('Calcul en cours...') : tr('Calcul des paramètres opérationnels'),
+            label: Text(_loadingGip ? tr('Calcul en cours...') : tr('Calculer GIP / WGV / CGV'),
                 style: const TextStyle(fontWeight: FontWeight.bold)),
             style: ElevatedButton.styleFrom(
               backgroundColor: kOrange,
@@ -3077,12 +3239,63 @@ class _PoolSimulationPageState extends State<PoolSimulationPage> with LocalizedP
             ),
           ),
         ),
-        if (_showRatchet) ...[
-          const SizedBox(height: 16),
-          if (_ratchetResult1 != null) _buildRatchetTable('Ratchet 1 — Théorique', _ratchetResult1!),
-          if (_ratchetResult2 != null) ...[const SizedBox(height: 12), _buildRatchetTable('Ratchet 2 — Historique', _ratchetResult2!)],
-          if (_ratchetResult3 != null) ...[const SizedBox(height: 12), _buildRatchetTable('Ratchet 3 — Combiné', _ratchetResult3!)],
-        ],
+
+
+        const SizedBox(height: 8),
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton.icon(
+            onPressed: () async {
+              // 4 derniers points complets (P/T/V/Q) issus du calcul pool
+              final n = _allPoolPoints.length;
+              final hist = n > 4 ? _allPoolPoints.sublist(n - 4) : List.of(_allPoolPoints);
+              double gipPool = 0;
+              for (final r in _gipResultsPool) {
+                gipPool += (r['WGV_GIP_CGV_list0'] as num?)?.toDouble() ?? 0.0;
+              }
+              if (!mounted) return;
+              Navigator.push(context, MaterialPageRoute(
+                builder: (_) => FutureSimulationPoolPage(
+                  siteName:     widget.siteName,
+                  listeCavites: _selected.join(','),
+                  gip:          gipPool,
+                  realData:     hist,
+                ),
+              ));
+            },
+            icon: const Icon(Icons.trending_up, size: 18),
+            label: Text(tr('Simulation future pool'), style: const TextStyle(fontWeight: FontWeight.bold)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: kOrange,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        // Bouton interruptibles/obligations pool
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton.icon(
+            onPressed: () async {
+              Navigator.push(context, MaterialPageRoute(
+                builder: (_) => InterruptiblesPoolPage(
+                  siteName: widget.siteName,
+                  gipResultsPool: _gipResultsPool,
+                ),
+              ));
+            },
+            icon: const Icon(Icons.pause_circle_outline, size: 18),
+            label: Text(tr('Interruptibles et obligations'), style: const TextStyle(fontWeight: FontWeight.bold)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: kOrange,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+          ),
+        ),
         const SizedBox(height: 8),
         SizedBox(
           width: double.infinity,
@@ -3137,7 +3350,7 @@ class _PoolSimulationPageState extends State<PoolSimulationPage> with LocalizedP
 
   // Calcul des débits maximaux (Ratchet)
   Future<void> _calculerRatchet() async {
-    setState(() { _loadingRatchet = true; _ratchetResult1 = null; _ratchetResult2 = null; _ratchetResult3 = null; _showRatchet = false; });
+    setState(() { _loadingRatchet = true; _ratchetResult1 = null; _showRatchet = false; });
     try {
       final host = kBaseUrl.replaceAll('http://','').split(':')[0];
 
@@ -3148,31 +3361,22 @@ class _PoolSimulationPageState extends State<PoolSimulationPage> with LocalizedP
         body:jsonEncode({'SiteName':widget.siteName}),
       ).timeout(const Duration(seconds:120));
 
-      // Ratchet 2
-      final resp2 = await http.post(
-        Uri(scheme:'http', host:host, port:8080, path:'/api/getTableauRatchet2_Pool'),
-        headers:{'Content-Type':'application/json'},
-        body:jsonEncode({'SiteName':widget.siteName}),
-      ).timeout(const Duration(seconds:120));
 
-      // Ratchet 3
-      final response = await http.post(
-        Uri(scheme:'http', host:host, port:8080, path:'/api/getTableauRatchet3_Pool'),
-        headers:{'Content-Type':'application/json'},
-        body:jsonEncode({'SiteName':widget.siteName}),
-      ).timeout(const Duration(seconds:120));
 
-      if (response.statusCode == 200) {
-        setState(() {
-          _ratchetResult3 = jsonDecode(response.body) as Map<String, dynamic>;
-          _ratchetResult1 = resp1.statusCode == 200 ? jsonDecode(resp1.body) as Map<String, dynamic> : null;
-          _ratchetResult2 = resp2.statusCode == 200 ? jsonDecode(resp2.body) as Map<String, dynamic> : null;
-          _loadingRatchet = false;
-          _showRatchet = true;
-        });
+      if (resp1.statusCode == 200) {
+        final data = jsonDecode(resp1.body) as Map<String, dynamic>;
+        setState(() { _ratchetResult1 = data; _loadingRatchet = false; });
+        if (mounted) {
+          Navigator.push(context, MaterialPageRoute(
+            builder: (_) => RatchetPoolPage(
+              titre: tr('Ratchets garantis'),
+              data: data,
+            ),
+          ));
+        }
       } else {
         setState(() => _loadingRatchet = false);
-        if (mounted) _showError('Erreur Ratchet: ${response.statusCode}');
+        if (mounted) _showError('Erreur Ratchet: ${resp1.statusCode}');
       }
     } catch (e) {
       setState(() => _loadingRatchet = false);
@@ -3231,12 +3435,7 @@ class _PoolSimulationPageState extends State<PoolSimulationPage> with LocalizedP
     ]);
   }
 
-  // Étape 2 — résultats GIP/WGV/CGV pool
-  Widget _buildResultatsStep() {
-    if (_gipResultsPool.isEmpty) {
-      return Text(tr('Aucun résultat disponible'),
-          style: const TextStyle(color: Colors.white54));
-    }
+  Widget _buildResultatsStepContent_UNUSED() {
     // Agrégat pool : sommer l1-l8 par caverne, puis calculer garanties/min/max sur les agrégés
     double totalGIPPermis = 0;
     for (final res in _gipResultsPool) {
@@ -3436,10 +3635,12 @@ class _PoolSimulationPageState extends State<PoolSimulationPage> with LocalizedP
           ),
         ),
         const SizedBox(height: 16),
+        _buildParamsOperationnelsPool(),
+        const SizedBox(height: 16),
         SizedBox(
           width: double.infinity,
           child: OutlinedButton.icon(
-            onPressed: () => setState(() { _step = 0; _selected.clear(); _simResult = null; _gipResult = null; _gipResultsPool = []; _ratchetResult1 = null; _ratchetResult2 = null; _ratchetResult3 = null; _showRatchet = false; _details.clear(); _seriePresReel = []; _seriePresSim = []; _serieTempReel = []; _serieTempSim = []; _serieVolume = []; _serieDebit = []; }),
+            onPressed: () => setState(() { _step = 0; _selected.clear(); _simResult = null; _gipResult = null; _gipResultsPool = []; _ratchetResult1 = null; _showRatchet = false; _details.clear(); _seriePresReel = []; _seriePresSim = []; _serieTempReel = []; _serieTempSim = []; _serieVolume = []; _serieDebit = []; _serieVolumeDebitPoints = []; _allPoolPoints = []; }),
             icon: const Icon(Icons.refresh, size: 16),
             label: Text(tr('Nouvelle simulation')),
             style: OutlinedButton.styleFrom(
@@ -3456,6 +3657,247 @@ class _PoolSimulationPageState extends State<PoolSimulationPage> with LocalizedP
 
   String _fmt(dynamic v) {
     try { return double.parse(v.toString()).toStringAsFixed(2); } catch (_) { return '-'; }
+  }
+
+  Widget _buildParamsOperationnelsPool() {
+
+
+    // GIP total pool
+    double gipTotal = 0;
+    for (final r in _gipResultsPool) {
+      gipTotal += (r['WGV_GIP_CGV_list0'] as num? ?? 0).toDouble();
+    }
+
+    // Agrégation sur toutes les cavités (logique standalone pool)
+    double totalIntInjWGV = 0, totalIntWithWGV = 0;
+    double totalIntInjGar = 0, totalIntWithGar = 0;
+    double totalIntInjReal = 0, totalIntWithReal = 0;
+    double totalAvgVolAlongY = 0, totalAvgVolBeginY = 0;
+    double totalAvgVolEndY = 0, totalAvgFlowEndY = 0;
+    double presPool = 0, presActuelle = 0, volActuel = 0;
+    String lastestDay = '-', dateInj = '-', dateWith = '-';
+
+    for (final res in _gipResultsPool) {
+      totalIntInjWGV   += (res['interruptible_WGV_inj']  as num? ?? 0).toDouble();
+      totalIntWithWGV  += (res['interruptible_WGV_with'] as num? ?? 0).toDouble();
+      totalIntInjGar   += (res['average_interruptible_injection_guaranteed']  as num? ?? 0).toDouble();
+      totalIntWithGar  += (res['average_interruptible_withdrawal_guaranteed'] as num? ?? 0).toDouble();
+      totalIntInjReal  += (res['average_interruptible_injection_realist']     as num? ?? 0).toDouble();
+      totalIntWithReal += (res['average_interruptible_withdrawal_realist']    as num? ?? 0).toDouble();
+      totalAvgVolAlongY += (res['avgVolumeAlongY']     as num? ?? 0).toDouble();
+      totalAvgVolBeginY += (res['avgVolumeBeginningY'] as num? ?? 0).toDouble();
+      totalAvgVolEndY   += (res['avgVolumeStoredEndY'] as num? ?? 0).toDouble();
+      totalAvgFlowEndY  += (res['avgVolumeInjWithEndY'] as num? ?? 0).toDouble();
+      volActuel         += (res['gipDernier'] as num? ?? 0).toDouble();
+      // pression pool = même valeur pour toutes les cavités
+      if (presPool == 0) presPool = (res['presentPressurePool'] as num? ?? 0).toDouble();
+      if (presActuelle == 0) presActuelle = (res['avgPressure'] as num? ?? 0).toDouble();
+      // lastestDayToMove : le plus tôt (plus contraignant)
+      final ldm = res['lastestDayToMove']?.toString() ?? '';
+      if (ldm.isNotEmpty && (lastestDay == '-' || _compareDates(ldm, lastestDay) < 0)) lastestDay = ldm;
+      // date_if_injecting : la plus tardive
+      final di = res['date_if_injecting']?.toString() ?? '';
+      if (di.isNotEmpty && (dateInj == '-' || _compareDates(di, dateInj) > 0)) dateInj = di;
+      // date_if_withdrawing : la plus tôt
+      final dw = res['date_if_withdrawing']?.toString() ?? '';
+      if (dw.isNotEmpty && (dateWith == '-' || _compareDates(dw, dateWith) < 0)) dateWith = dw;
+    }
+
+    // % vs GIP total
+    final pctInjGar   = gipTotal > 0 ? totalIntInjGar   / (gipTotal / 100) : 0.0;
+    final pctWithGar  = gipTotal > 0 ? totalIntWithGar  / (gipTotal / 100) : 0.0;
+    final pctInjReal  = gipTotal > 0 ? totalIntInjReal  / (gipTotal / 100) : 0.0;
+    final pctWithReal = gipTotal > 0 ? totalIntWithReal / (gipTotal / 100) : 0.0;
+
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      _buildSectionTitle(tr('Paramètres opérationnels — Pool')),
+      Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: kBleuMoyen.withValues(alpha: 0.5),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: Colors.white12),
+        ),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+
+          // ── Volumes indicatifs ──
+          _buildSectionTitle(tr('Volumes indicatifs')),
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.05),
+                borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.white12)),
+            child: Column(children: [
+              _paramRow(tr('Pression pool actuelle'),        '${presPool.toStringAsFixed(2)} bar'),
+              _paramRow(tr('Volume actuel total'),           '${volActuel.toStringAsFixed(2)} Mm³'),
+              _paramRow(tr('Vol. moyen annuel (indicatif)'), '${totalAvgVolAlongY.toStringAsFixed(2)} Mm³'),
+              _paramRow(tr('Vol. moyen depuis début année'), '${totalAvgVolBeginY.toStringAsFixed(2)} Mm³'),
+              _paramRow(tr('Vol. moyen fin année (indicatif)'), '${totalAvgVolEndY.toStringAsFixed(2)} Mm³'),
+              _paramRow(tr('Débit moyen inj(+)/souti(-) fin année'), '${totalAvgFlowEndY.toStringAsFixed(2)} Mm³/j'),
+              _paramRow(tr('Dernier jour pour inj(+)/souti(-)'), lastestDay),
+              _paramRow(tr('Date si injection max'),         dateInj),
+              _paramRow(tr('Date si soutirage max'),         dateWith),
+            ]),
+          ),
+          const SizedBox(height: 12),
+
+          // ── Interruptible WGV ──
+          _buildSectionTitle(tr('Interruptible WGV')),
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.05),
+                borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.white12)),
+            child: Column(children: [
+              _paramRow(tr('Volume interruptible si injection'),  '${totalIntInjGar.toStringAsFixed(2)} Mm³/j'),
+              _paramRow(tr('Volume interruptible si soutirage'),  '${totalIntWithGar.toStringAsFixed(2)} Mm³/j'),
+            ]),
+          ),
+          const SizedBox(height: 12),
+
+          // ── Valeurs garanties ──
+          _buildSectionTitle(tr('Valeurs garanties')),
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(color: kOrange.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(8), border: Border.all(color: kOrange.withValues(alpha: 0.3))),
+            child: Column(children: [
+              Row(children: [
+                Expanded(child: Text('', style: const TextStyle(fontSize: 9))),
+                Expanded(child: Text(tr('Avg Interr Sout MNm³'), textAlign: TextAlign.center,
+                    style: const TextStyle(color: kOrange, fontWeight: FontWeight.bold, fontSize: 9))),
+                Expanded(child: Text(tr('Avg Interr Inj MNm³'), textAlign: TextAlign.center,
+                    style: const TextStyle(color: kOrange, fontWeight: FontWeight.bold, fontSize: 9))),
+                Expanded(child: Text(tr('% vs volume total'), textAlign: TextAlign.center,
+                    style: const TextStyle(color: kOrange, fontWeight: FontWeight.bold, fontSize: 9))),
+              ]),
+              const Divider(color: Colors.white12, height: 8),
+              Row(children: [
+                const Expanded(child: Text('', style: TextStyle(fontSize: 9))),
+                Expanded(child: Text(totalIntWithGar.toStringAsFixed(2), textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 10))),
+                Expanded(child: Text(totalIntInjGar.toStringAsFixed(2), textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 10))),
+                Expanded(child: Text(pctWithGar.toStringAsFixed(2), textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 10))),
+              ]),
+            ]),
+          ),
+          const SizedBox(height: 12),
+
+          // ── Valeurs réalistes ──
+          _buildSectionTitle(tr('Valeurs réalistes')),
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.05),
+                borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.white12)),
+            child: Column(children: [
+              Row(children: [
+                Expanded(child: Text('', style: const TextStyle(fontSize: 9))),
+                Expanded(child: Text(tr('Avg Interr Sout MNm³'), textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.white70, fontWeight: FontWeight.bold, fontSize: 9))),
+                Expanded(child: Text(tr('Avg Interr Inj MNm³'), textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.white70, fontWeight: FontWeight.bold, fontSize: 9))),
+                Expanded(child: Text(tr('% vs volume total'), textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.white70, fontWeight: FontWeight.bold, fontSize: 9))),
+              ]),
+              const Divider(color: Colors.white12, height: 8),
+              Row(children: [
+                const Expanded(child: Text('', style: TextStyle(fontSize: 9))),
+                Expanded(child: Text(totalIntWithReal.toStringAsFixed(2), textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 10))),
+                Expanded(child: Text(totalIntInjReal.toStringAsFixed(2), textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 10))),
+                Expanded(child: Text(pctWithReal.toStringAsFixed(2), textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 10))),
+              ]),
+            ]),
+          ),
+        ]),
+      ),
+      const SizedBox(height: 8),
+      SizedBox(
+        width: double.infinity,
+        child: ElevatedButton.icon(
+          onPressed: _loadingGip ? null : _calculerGipPool,
+          icon: _loadingGip
+              ? const SizedBox(width: 16, height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+              : const Icon(Icons.calculate, size: 18),
+          label: Text(_loadingGip ? tr('Calcul en cours...') : tr('Calculer GIP / WGV / CGV'),
+              style: const TextStyle(fontWeight: FontWeight.bold)),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: kOrange,
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(vertical: 14),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+        ),
+      ),
+      const SizedBox(height: 8),
+      SizedBox(
+        width: double.infinity,
+        child: ElevatedButton.icon(
+          onPressed: _loadingRatchet ? null : _calculerRatchet,
+          icon: _loadingRatchet
+              ? const SizedBox(width: 16, height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+              : const Icon(Icons.speed, size: 18),
+          label: Text(_loadingRatchet ? tr('Calcul en cours...') : tr('Calcul des débits maximaux'),
+              style: const TextStyle(fontWeight: FontWeight.bold)),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: kOrange,
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(vertical: 14),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+        ),
+      ),
+      if (_showRatchet) ...[
+        const SizedBox(height: 16),
+        if (_ratchetResult1 != null) _buildRatchetTable(tr('Ratchets garantis'), _ratchetResult1!),
+      ],
+      const SizedBox(height: 8),
+      SizedBox(
+        width: double.infinity,
+        child: ElevatedButton.icon(
+          onPressed: () {
+            Navigator.push(context, MaterialPageRoute(
+              builder: (_) => InterruptiblesPoolPage(
+                siteName: widget.siteName,
+                gipResultsPool: _gipResultsPool,
+              ),
+            ));
+          },
+          icon: const Icon(Icons.pause_circle_outline, size: 18),
+          label: Text(tr('Interruptibles et obligations'), style: const TextStyle(fontWeight: FontWeight.bold)),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: kOrange,
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(vertical: 14),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+        ),
+      ),
+    ]);
+  }
+
+  Widget _paramRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(children: [
+        Expanded(child: Text(label, style: const TextStyle(color: Colors.white70, fontSize: 11))),
+        Text(value, style: const TextStyle(color: kOrange, fontWeight: FontWeight.bold, fontSize: 11)),
+      ]),
+    );
+  }
+
+  // Compare deux dates au format "d/m/yyyy" : retourne <0 si a avant b
+  int _compareDates(String a, String b) {
+    try {
+      final pa = a.split('/'); final pb = b.split('/');
+      final da = DateTime(int.parse(pa[2]), int.parse(pa[1]), int.parse(pa[0]));
+      final db = DateTime(int.parse(pb[2]), int.parse(pb[1]), int.parse(pb[0]));
+      return da.compareTo(db);
+    } catch (_) { return 0; }
   }
 
   Widget _gipCell(String label, String value) {
@@ -3512,10 +3954,1438 @@ class _PoolSimulationPageState extends State<PoolSimulationPage> with LocalizedP
             // Contenu selon étape
             if (_step == 0) _buildSelectionStep(),
             if (_step == 1) _buildSimulationStep(),
-            if (_step == 2) _buildResultatsStep(),
+
             const SizedBox(height: 24),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PAGE : Simulation Future
+// ═══════════════════════════════════════════════════════════════════════════
+class FutureSimulationPage extends StatefulWidget {
+  final dynamic cavityId;
+  final String  cavityName;
+  final String  siteName;
+  final double  gip;
+  final List<Map<String, dynamic>> realData;
+
+  const FutureSimulationPage({
+    super.key,
+    required this.cavityId,
+    required this.cavityName,
+    required this.siteName,
+    required this.gip,
+    required this.realData,
+  });
+
+  @override
+  State<FutureSimulationPage> createState() => _FutureSimulationPageState();
+}
+
+class _FutureSimulationPageState extends State<FutureSimulationPage> with LocalizedPage {
+  final TextEditingController _debitCtrl = TextEditingController();
+  bool _loading = false;
+  String? _error;
+
+  // Points simulés : {date, pression, temperature, volume, debit}
+  final List<Map<String, dynamic>> _simPoints = [];
+
+  @override
+  void initState() {
+    super.initState();
+    // Initialiser avec les 4 derniers points historiques
+    if (widget.realData.isNotEmpty) {
+      final hist = widget.realData
+          .where((p) => p['date'] != null)
+          .toList();
+      final last4 = hist.length > 4 ? hist.sublist(hist.length - 4) : hist;
+      for (final p in last4) {
+        final pression = (p['pwelHead'] ?? p['pressionReelle'] ?? 0.0);
+        final temperature = (p['twelHead'] ?? p['temperatureReelle'] ?? 0.0);
+        _simPoints.add({
+          'date':        p['date'].toString().substring(0, 10),
+          'pression':    (pression as num).toDouble(),
+          'temperature': (temperature as num).toDouble(),
+          'volume':      ((p['volume'] ?? 0.0) as num).toDouble(),
+          'debit':       ((p['debit'] ?? 0.0) as num).toDouble(),
+        });
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _debitCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _simulerJour() async {
+    final debitStr = _debitCtrl.text.trim().replaceAll(',', '.');
+    if (debitStr.isEmpty) {
+      setState(() => _error = tr('Entrez un débit'));
+      return;
+    }
+    final debit = double.tryParse(debitStr);
+    if (debit == null) {
+      setState(() => _error = tr('La donnée entrée doit obligatoirement être un nombre'));
+      return;
+    }
+
+    setState(() { _loading = true; _error = null; });
+
+    try {
+      final host = kBaseUrl.replaceAll('http://','').split(':')[0];
+      final resp = await http.post(
+        Uri(scheme: 'http', host: host, port: 8080, path: '/api/simulate/future'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'cavityId': widget.cavityId,
+          'debit':    debit,
+          'gip':      widget.gip,
+          'points':   _simPoints,
+        }),
+      ).timeout(const Duration(seconds: 30));
+
+      if (resp.statusCode == 200) {
+        final data = jsonDecode(resp.body) as Map<String, dynamic>;
+        if (data['error'] == true) {
+          setState(() { _error = data['message']?.toString(); _loading = false; });
+        } else {
+          final rectif   = data['horsLimitPressionRectif']   == true;
+          final continuu = data['horsLimitPressionContinue'] == true;
+          setState(() {
+            _simPoints.add({
+              'date':        data['date'],
+              'pression':    data['pression'],
+              'temperature': data['temperature'],
+              'volume':      data['volume'],
+              'debit':       data['debit'],
+            });
+            _loading = false;
+            if (rectif) {
+              _error = tr("Debit rectifie : pression simulee hors limites permis. Le debit a ete ajuste proportionnellement.");
+            } else if (continuu) {
+              _error = tr("Pression sur borne permis : pression simulee hors limites, etat de la cavite inchange.");
+            } else {
+              _error = null;
+            }
+          });
+        }
+      } else {
+        setState(() { _error = 'Erreur serveur: ${resp.statusCode} - ${resp.body}'; _loading = false; });
+      }
+    } catch (e) {
+      setState(() { _error = 'Erreur: $e'; _loading = false; });
+    }
+  }
+
+  void _reset() {
+    setState(() {
+      _simPoints.clear();
+      _error = null;
+      // Réinitialiser avec les 4 derniers points historiques
+      if (widget.realData.isNotEmpty) {
+        final hist = widget.realData
+            .where((p) => p['date'] != null)
+            .toList();
+        final last4 = hist.length > 4 ? hist.sublist(hist.length - 4) : hist;
+        for (final p in last4) {
+          final pression = (p['pwelHead'] ?? p['pressionReelle'] ?? 0.0);
+          final temperature = (p['twelHead'] ?? p['temperatureReelle'] ?? 0.0);
+          _simPoints.add({
+            'date':        p['date'].toString().substring(0, 10),
+            'pression':    (pression as num).toDouble(),
+            'temperature': (temperature as num).toDouble(),
+            'volume':      ((p['volume'] ?? 0.0) as num).toDouble(),
+            'debit':       ((p['debit'] ?? 0.0) as num).toDouble(),
+          });
+        }
+      }
+    });
+  }
+
+  // Points simulés (excluant les 4 points historiques d'init)
+  List<Map<String, dynamic>> get _futurePoints =>
+      _simPoints.length > 4 ? _simPoints.sublist(4) : [];
+
+  // Points pour les graphes : tout l'historique de "Lancer la simulation" + les points futurs simulés
+  List<Map<String, dynamic>> get _chartPoints {
+    final combined = <Map<String, dynamic>>[];
+    for (final p in widget.realData) {
+      if (p['date'] == null) continue;
+      final pression = (p['pwelHead'] ?? p['pressionReelle'] ?? 0.0);
+      final temperature = (p['twelHead'] ?? p['temperatureReelle'] ?? 0.0);
+      final volume = (p['volume'] ?? 0.0);
+      final debit = (p['debit'] ?? 0.0);
+      combined.add({
+        'date':        p['date'].toString().substring(0, 10),
+        'pression':    (pression as num).toDouble(),
+        'temperature': (temperature as num).toDouble(),
+        'volume':      (volume as num).toDouble(),
+        'debit':       (debit as num).toDouble(),
+      });
+    }
+    combined.addAll(_futurePoints);
+    return combined;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: kBleuFonce,
+      appBar: AppBar(
+        backgroundColor: kBleuFonce,
+        foregroundColor: Colors.white,
+        title: Row(children: [
+          Text(tr('Simulation future'), style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+          const SizedBox(width: 8),
+          Text(widget.cavityName, style: const TextStyle(fontSize: 12, color: kOrange)),
+        ]),
+        actions: [const LanguageSelectorWidget(), const SizedBox(width: 8)],
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // ── Saisie débit ──
+            _buildSectionTitleGip(tr('Saisir le débit du jour suivant')),
+            const SizedBox(height: 8),
+            Row(children: [
+              Expanded(
+                child: TextField(
+                  controller: _debitCtrl,
+                  keyboardType: const TextInputType.numberWithOptions(signed: true, decimal: true),
+                  style: const TextStyle(color: Colors.white),
+                  decoration: InputDecoration(
+                    labelText: tr('Débit (Mm³/j)'),
+                    labelStyle: const TextStyle(color: Colors.white54),
+                    hintText: '- soutirage / + injection',
+                    hintStyle: const TextStyle(color: Colors.white24, fontSize: 11),
+                    enabledBorder: const OutlineInputBorder(borderSide: BorderSide(color: Colors.white24)),
+                    focusedBorder: const OutlineInputBorder(borderSide: BorderSide(color: kOrange)),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              // Bouton +/- pour inverser le signe (utile sur claviers sans touche -)
+              GestureDetector(
+                onTap: () {
+                  final txt = _debitCtrl.text.trim();
+                  if (txt.isEmpty) return;
+                  final val = double.tryParse(txt);
+                  if (val != null) {
+                    _debitCtrl.text = (-val).toString();
+                    _debitCtrl.selection = TextSelection.collapsed(offset: _debitCtrl.text.length);
+                  }
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 16),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Colors.white24),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: const Text('+/-', style: TextStyle(color: Colors.white70, fontSize: 14)),
+                ),
+              ),
+              const SizedBox(width: 8),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: kOrange,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+                icon: _loading
+                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                    : const Icon(Icons.add, size: 18),
+                label: Text(tr('Simuler')),
+                onPressed: _loading ? null : _simulerJour,
+              ),
+            ]),
+            if (_error != null) ...[
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(color: Colors.red.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(8)),
+                child: Row(children: [
+                  const Icon(Icons.warning_amber, color: Colors.red, size: 16),
+                  const SizedBox(width: 8),
+                  Expanded(child: Text(_error!, style: const TextStyle(color: Colors.red, fontSize: 12))),
+                ]),
+              ),
+            ],
+            const SizedBox(height: 20),
+
+            // ── Graphe Pression ──
+            if (_futurePoints.isNotEmpty) ...[
+              _buildSectionTitleGip(tr('Pression tête de puits')),
+              const SizedBox(height: 8),
+              _buildInteractiveChart(
+                points: _chartPoints,
+                series: const [_SeriesSpec(valueKey: 'pression', color: kOrange, unit: 'bar')],
+              ),
+              const SizedBox(height: 16),
+
+              // ── Graphe Température ──
+              _buildSectionTitleGip(tr('Température tête de puits')),
+              const SizedBox(height: 8),
+              _buildInteractiveChart(
+                points: _chartPoints,
+                series: const [_SeriesSpec(valueKey: 'temperature', color: Colors.lightBlueAccent, unit: '°C')],
+              ),
+              const SizedBox(height: 16),
+
+              // ── Graphe Débit / Volume stocké (combiné) ──
+              _buildSectionTitleGip(tr('Débit / Volume stocké')),
+              const SizedBox(height: 8),
+              _buildInteractiveChart(
+                points: _chartPoints,
+                series: const [
+                  _SeriesSpec(valueKey: 'volume', color: Colors.green, unit: 'Vol (Mm³)'),
+                  _SeriesSpec(valueKey: 'debit',  color: kOrange,      unit: 'Q (Mm³/j)'),
+                ],
+              ),
+              const SizedBox(height: 16),
+
+              // ── Tableau récapitulatif ──
+              _buildSectionTitleGip(tr('Résultats journaliers')),
+              const SizedBox(height: 8),
+              _buildResultTable(),
+              const SizedBox(height: 16),
+
+              // ── Bouton reset ──
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.white54,
+                    side: const BorderSide(color: Colors.white24),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  icon: const Icon(Icons.refresh, size: 16),
+                  label: Text(tr('Réinitialiser')),
+                  onPressed: _reset,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Graphe interactif : 1 ou 2 séries superposées (chacune normalisée sur sa propre
+  // échelle), avec sélection tactile d'un point pour afficher sa valeur (date + valeur(s)).
+  Widget _buildInteractiveChart({
+    required List<Map<String, dynamic>> points,
+    required List<_SeriesSpec> series,
+  }) {
+    if (points.isEmpty) return const SizedBox.shrink();
+    return _InteractiveChart(points: points, series: series);
+  }
+
+  Widget _buildResultTable() {
+    return Table(
+      border: TableBorder.all(color: Colors.white12),
+      columnWidths: const {
+        0: FlexColumnWidth(2),
+        1: FlexColumnWidth(1.5),
+        2: FlexColumnWidth(1.5),
+        3: FlexColumnWidth(1.5),
+      },
+      children: [
+        TableRow(
+          decoration: const BoxDecoration(color: Color(0xFF1A3A5C)),
+          children: [
+            _tableHeader('Date'),
+            _tableHeader('P (bar)'),
+            _tableHeader('Vol (Mm³)'),
+            _tableHeader('Q (Mm³/j)'),
+          ],
+        ),
+        ..._futurePoints.map((p) => TableRow(children: [
+          _tableCell(p['date']?.toString() ?? '-'),
+          _tableCell(_fmt(p['pression'])),
+          _tableCell(_fmt(p['volume'])),
+          _tableCell(_fmt(p['debit'])),
+        ])),
+      ],
+    );
+  }
+
+  Widget _tableHeader(String t) => Padding(
+    padding: const EdgeInsets.all(6),
+    child: Text(t, style: const TextStyle(color: kOrange, fontWeight: FontWeight.bold, fontSize: 10), textAlign: TextAlign.center),
+  );
+
+  Widget _tableCell(String t) => Padding(
+    padding: const EdgeInsets.all(5),
+    child: Text(t, style: const TextStyle(color: Colors.white70, fontSize: 10), textAlign: TextAlign.center),
+  );
+
+  Widget _buildSectionTitleGip(String title) {
+    return Row(children: [
+      Container(width: 4, height: 14, decoration: BoxDecoration(color: kOrange, borderRadius: BorderRadius.circular(2))),
+      const SizedBox(width: 8),
+      Text(title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
+    ]);
+  }
+
+  String _fmt(dynamic v) {
+    if (v == null) return '-';
+    if (v is num) return v.toStringAsFixed(2);
+    return v.toString();
+  }
+}
+
+// ─── Painter simple pour graphe lignes ───────────────────────────────────────
+class _LinePainter extends CustomPainter {
+  final List<double> values;
+  final Color color;
+  final double minV, maxV;
+
+  const _LinePainter({required this.values, required this.color, required this.minV, required this.maxV});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (values.length < 2) return;
+    final paint = Paint()..color = color..strokeWidth = 2..style = PaintingStyle.stroke;
+    final range = maxV - minV == 0 ? 1.0 : maxV - minV;
+    final path = Path();
+    for (int i = 0; i < values.length; i++) {
+      final x = i / (values.length - 1) * size.width;
+      final y = size.height - (values[i] - minV) / range * size.height;
+      i == 0 ? path.moveTo(x, y) : path.lineTo(x, y);
+    }
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(_LinePainter old) => old.values != values;
+}
+
+// ─── Spécification d'une série pour le graphe interactif ────────────────────
+class _SeriesSpec {
+  final String valueKey;
+  final Color color;
+  final String unit;
+  const _SeriesSpec({required this.valueKey, required this.color, required this.unit});
+}
+
+// ─── Graphe interactif (1 ou 2 séries) avec sélection tactile d'un point ────
+class _InteractiveChart extends StatefulWidget {
+  final List<Map<String, dynamic>> points;
+  final List<_SeriesSpec> series;
+
+  const _InteractiveChart({required this.points, required this.series});
+
+  @override
+  State<_InteractiveChart> createState() => _InteractiveChartState();
+}
+
+class _InteractiveChartState extends State<_InteractiveChart> {
+  int? _selectedIndex;
+
+  void _selectFromDx(double dx, double width) {
+    final n = widget.points.length;
+    if (n == 0 || width <= 0) return;
+    final idx = (dx / width * (n - 1)).round().clamp(0, n - 1);
+    setState(() => _selectedIndex = idx);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Bornes min/max par série (mêmes marges que l'ancien _buildLineChart : ±10%)
+    final bounds = <List<double>>[]; // [minV, maxV] par série
+    for (final s in widget.series) {
+      final values = widget.points.map((p) => (p[s.valueKey] as num).toDouble()).toList();
+      final minV = values.reduce((a, b) => a < b ? a : b);
+      final maxV = values.reduce((a, b) => a > b ? a : b);
+      final range = (maxV - minV).abs();
+      bounds.add([minV - range * 0.1, maxV + range * 0.1]);
+    }
+
+    final selected = _selectedIndex != null ? widget.points[_selectedIndex!] : null;
+
+    return LayoutBuilder(builder: (context, constraints) {
+      final width = constraints.maxWidth;
+      return GestureDetector(
+        onTapDown:  (d) => _selectFromDx(d.localPosition.dx, width),
+        onPanUpdate: (d) => _selectFromDx(d.localPosition.dx, width),
+        child: Container(
+          height: 180,
+          width: double.infinity,
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.04),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Stack(
+            children: [
+              for (int i = 0; i < widget.series.length; i++)
+                Positioned.fill(
+                  child: CustomPaint(
+                    painter: _LinePainter(
+                      values: widget.points.map((p) => (p[widget.series[i].valueKey] as num).toDouble()).toList(),
+                      color: widget.series[i].color,
+                      minV: bounds[i][0],
+                      maxV: bounds[i][1],
+                    ),
+                  ),
+                ),
+              if (_selectedIndex != null)
+                Positioned.fill(
+                  child: CustomPaint(
+                    painter: _SelectionPainter(index: _selectedIndex!, count: widget.points.length),
+                  ),
+                ),
+              Positioned(
+                top: 0, right: 0,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [for (final s in widget.series) Text(s.unit, style: TextStyle(color: s.color, fontSize: 10))],
+                ),
+              ),
+              if (selected != null)
+                Positioned(
+                  left: 4, top: 0,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                    decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.65), borderRadius: BorderRadius.circular(6)),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(selected['date']?.toString() ?? '', style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
+                        for (final s in widget.series)
+                          Text('${s.unit} : ${_fmtVal(selected[s.valueKey])}', style: TextStyle(color: s.color, fontSize: 10)),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      );
+    });
+  }
+
+  String _fmtVal(dynamic v) {
+    if (v == null) return '-';
+    if (v is num) return v.toStringAsFixed(2);
+    return v.toString();
+  }
+}
+
+// Trait vertical + repère sur le point sélectionné
+class _SelectionPainter extends CustomPainter {
+  final int index;
+  final int count;
+
+  const _SelectionPainter({required this.index, required this.count});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (count < 2) return;
+    final x = index / (count - 1) * size.width;
+    final paint = Paint()
+      ..color = Colors.white54
+      ..strokeWidth = 1;
+    canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
+  }
+
+  @override
+  bool shouldRepaint(_SelectionPainter old) => old.index != index || old.count != count;
+}
+
+// ─── Page : Volumes interruptibles (injection / soutirage) ─────────────────
+class InterruptiblesPage extends StatefulWidget {
+  final dynamic cavityId;
+  final String  cavityName;
+
+  const InterruptiblesPage({super.key, required this.cavityId, required this.cavityName});
+
+  @override
+  State<InterruptiblesPage> createState() => _InterruptiblesPageState();
+}
+
+class _InterruptiblesPageState extends State<InterruptiblesPage> {
+  bool _loading = true;
+  String? _error;
+  Map<String, dynamic>? _result;
+  Map<String, dynamic>? _obligations;
+
+  @override
+  void initState() {
+    super.initState();
+    _charger();
+  }
+
+  Future<void> _charger() async {
+    setState(() { _loading = true; _error = null; });
+    try {
+      final uriInterr = Uri.parse('$kBaseUrl/api/gip/interruptibles/${widget.cavityId}');
+      final uriOblig  = Uri.parse('$kBaseUrl/api/gip/obligations/${widget.cavityId}');
+      final responses = await Future.wait([
+        http.get(uriInterr).timeout(const Duration(seconds: 120)),
+        http.get(uriOblig).timeout(const Duration(seconds: 120)),
+      ]);
+      if (responses[0].statusCode == 200 && responses[1].statusCode == 200) {
+        setState(() {
+          _result = jsonDecode(responses[0].body);
+          _obligations = jsonDecode(responses[1].body);
+          _loading = false;
+        });
+      } else {
+        setState(() { _error = 'Erreur serveur : ${responses[0].statusCode} / ${responses[1].statusCode}'; _loading = false; });
+      }
+    } catch (e) {
+      setState(() { _error = 'Erreur : $e'; _loading = false; });
+    }
+  }
+
+  String _fmt(dynamic v) {
+    if (v == null) return '-';
+    if (v is num) return v.toStringAsFixed(2);
+    return v.toString();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: kBleuFonce,
+      appBar: AppBar(
+        backgroundColor: kBleuFonce,
+        foregroundColor: Colors.white,
+        title: Row(children: [
+          const Text('Interruptibles et obligations', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+          const SizedBox(width: 8),
+          Text(widget.cavityName, style: const TextStyle(fontSize: 12, color: kOrange)),
+        ]),
+      ),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator(color: kOrange))
+          : _error != null
+              ? Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(color: Colors.red.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(8)),
+                      child: Row(children: [
+                        const Icon(Icons.warning_amber, color: Colors.red, size: 16),
+                        const SizedBox(width: 8),
+                        Expanded(child: Text(_error!, style: const TextStyle(color: Colors.red, fontSize: 12))),
+                      ]),
+                    ),
+                    const SizedBox(height: 12),
+                    OutlinedButton(onPressed: _charger, child: const Text('Réessayer')),
+                  ]),
+                )
+              : SingleChildScrollView(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(tr('Volumes interruptibles'),
+                        style: const TextStyle(color: kOrange, fontWeight: FontWeight.bold, fontSize: 13)),
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.05),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.white12),
+                      ),
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Row(children: [
+                          Expanded(child: Text('Volume interruptible si injection',
+                              style: const TextStyle(color: Colors.white70, fontSize: 12))),
+                          Text('${_fmt(_result?['interruptible_WGV_inj'])} Mm³',
+                              style: const TextStyle(color: kOrange, fontWeight: FontWeight.bold, fontSize: 13)),
+                        ]),
+                        const SizedBox(height: 8),
+                        Row(children: [
+                          Expanded(child: Text('Volume interruptible si soutirage',
+                              style: const TextStyle(color: Colors.white70, fontSize: 12))),
+                          Text('${(-(_result?['interruptible_WGV_with'] as num? ?? 0).toDouble()).toStringAsFixed(2)} Mm³',
+                              style: const TextStyle(color: kOrange, fontWeight: FontWeight.bold, fontSize: 13)),
+                        ]),
+                      ]),
+                    ),
+                    const SizedBox(height: 24),
+                    Text(tr('Obligations'),
+                        style: const TextStyle(color: kOrange, fontWeight: FontWeight.bold, fontSize: 13)),
+                    const SizedBox(height: 8),
+                    _buildObligationsTable(),
+                  ]),
+                ),
+    );
+  }
+
+  Widget _buildObligationsTable() {
+    final List<List<String>> rows = [];
+    rows.add([tr('Pression moyenne'), _fmt(_obligations?['avgPressure']) + ' bar']);
+    rows.add([tr('Pression actuelle'), _fmt(_obligations?['presentPressure']) + ' bar']);
+    rows.add([tr("Volume Moyen à stocker tout au long de l'année gazière (indicatif)"), _fmt(_obligations?['avgVolumeAlongY']) + ' Mm³']);
+    rows.add([tr("Volume Moyen depuis le début de l'année gazière"), _fmt(_obligations?['avgVolumeBeginningY']) + ' Mm³']);
+    rows.add([tr("Volume moyen à stocker jusqu'à la fin de l'année gazière (indicatif)"), _fmt(_obligations?['avgVolumeStoredEndY']) + ' Mm³']);
+    rows.add([tr("Volume journalier moyen inj(+) / souti(-) jusqu'à la fin de l'année gazière (indicatif)"), _fmt(_obligations?['avgVolumeInjWithEndY']) + ' Mm³/j']);
+    final dernierJour = _obligations != null && _obligations!['lastestDayToMove'] != null
+        ? _obligations!['lastestDayToMove'].toString()
+        : '-';
+    rows.add([tr('Dernier jour pour inj(+) / sout(-)'), dernierJour]);
+
+    final List<Widget> rowWidgets = [];
+    for (int i = 0; i < rows.length; i++) {
+      final label = rows[i][0];
+      final value = rows[i][1];
+      rowWidgets.add(
+        Container(
+          color: Colors.white.withValues(alpha: i.isEven ? 0.03 : 0.0),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                flex: 3,
+                child: Text(label, style: const TextStyle(color: Colors.white70, fontSize: 11)),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                flex: 2,
+                child: Text(value, style: const TextStyle(color: kOrange, fontWeight: FontWeight.bold, fontSize: 12)),
+              ),
+            ],
+          ),
+        ),
+      );
+      if (i < rows.length - 1) {
+        rowWidgets.add(const Divider(height: 1, color: Colors.white12));
+      }
+    }
+
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.white12),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(children: rowWidgets),
+    );
+  }
+}
+// ─────────────────────────────────────────────────────────────────────────────
+// PAGE : SIMULATION FUTURE POOL
+// ─────────────────────────────────────────────────────────────────────────────
+class FutureSimulationPoolPage extends StatefulWidget {
+  final String siteName;
+  final String listeCavites;
+  final double gip;
+  final List<Map<String, dynamic>> realData;
+
+  const FutureSimulationPoolPage({
+    super.key,
+    required this.siteName,
+    required this.listeCavites,
+    required this.gip,
+    required this.realData,
+  });
+
+  @override
+  State<FutureSimulationPoolPage> createState() => _FutureSimulationPoolPageState();
+}
+
+class _FutureSimulationPoolPageState extends State<FutureSimulationPoolPage> with LocalizedPage {
+  final TextEditingController _debitCtrl = TextEditingController();
+  bool _loading = false;
+  String? _error;
+  bool _errorIsFatal = true;
+  final List<Map<String, dynamic>> _simPoints = [];
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.realData.isNotEmpty) {
+      final hist = widget.realData.where((p) => p['date'] != null).toList();
+      final last4 = hist.length > 4 ? hist.sublist(hist.length - 4) : hist;
+      for (final p in last4) {
+        _simPoints.add({
+          'date':        p['date'].toString().substring(0, 10),
+          'pression':    ((p['pression'] ?? 0.0) as num).toDouble(),
+          'temperature': ((p['temperature'] ?? 0.0) as num).toDouble(),
+          'volume':      ((p['volume'] ?? 0.0) as num).toDouble(),
+          'debit':       ((p['debit'] ?? 0.0) as num).toDouble(),
+        });
+      }
+    }
+  }
+
+  @override
+  void dispose() { _debitCtrl.dispose(); super.dispose(); }
+
+  Future<void> _simulerJour() async {
+    final debitStr = _debitCtrl.text.trim().replaceAll(',', '.');
+    if (debitStr.isEmpty) {
+      setState(() { _error = tr('Entrez un debit'); _errorIsFatal = true; }); return;
+    }
+    final debit = double.tryParse(debitStr);
+    if (debit == null) {
+      setState(() { _error = tr('La donnee entree doit obligatoirement etre un nombre'); _errorIsFatal = true; }); return;
+    }
+    setState(() { _loading = true; _error = null; });
+    try {
+      final host = kBaseUrl.replaceAll('http://', '').split(':')[0];
+      final resp = await http.post(
+        Uri(scheme: 'http', host: host, port: 8080, path: '/api/simulate/future-pool'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'siteName':     widget.siteName,
+          'listeCavites': widget.listeCavites,
+          'debit':        debit,
+          'gip':          widget.gip,
+          'points':       _simPoints,
+        }),
+      ).timeout(const Duration(seconds: 30));
+
+      if (resp.statusCode == 200) {
+        final data = jsonDecode(resp.body) as Map<String, dynamic>;
+        if (data['error'] == true) {
+          setState(() { _error = data['message']?.toString(); _errorIsFatal = true; _loading = false; });
+        } else {
+          final rectif   = data['horsLimitPressionRectif']   == true;
+          final continuu = data['horsLimitPressionContinue'] == true;
+          setState(() {
+            _simPoints.add({
+              'date':        data['date'],
+              'pression':    data['pression'],
+              'temperature': data['temperature'],
+              'volume':      data['volume'],
+              'debit':       data['debit'],
+            });
+            _loading = false;
+            if (rectif) {
+              _error = tr("Debit rectifie : pression simulee hors limites permis. Le debit a ete ajuste proportionnellement.");
+              _errorIsFatal = false;
+            } else if (continuu) {
+              _error = tr("Pression sur borne permis : pression simulee hors limites, etat de la cavite inchange.");
+              _errorIsFatal = false;
+            } else {
+              _error = null;
+            }
+          });
+        }
+      } else {
+        setState(() { _error = 'Erreur serveur: ${resp.statusCode} - ${resp.body}'; _errorIsFatal = true; _loading = false; });
+      }
+    } catch (e) {
+      setState(() { _error = 'Erreur: $e'; _errorIsFatal = true; _loading = false; });
+    }
+  }
+
+  void _reset() {
+    setState(() {
+      _simPoints.clear(); _error = null;
+      if (widget.realData.isNotEmpty) {
+        final hist = widget.realData.where((p) => p['date'] != null).toList();
+        final last4 = hist.length > 4 ? hist.sublist(hist.length - 4) : hist;
+        for (final p in last4) {
+          _simPoints.add({
+            'date':        p['date'].toString().substring(0, 10),
+            'pression':    ((p['pression'] ?? 0.0) as num).toDouble(),
+            'temperature': ((p['temperature'] ?? 0.0) as num).toDouble(),
+            'volume':      ((p['volume'] ?? 0.0) as num).toDouble(),
+            'debit':       ((p['debit'] ?? 0.0) as num).toDouble(),
+          });
+        }
+      }
+    });
+  }
+
+  List<Map<String, dynamic>> get _futurePoints =>
+      _simPoints.length > 4 ? _simPoints.sublist(4) : [];
+
+
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: kBleuFonce,
+      appBar: AppBar(
+        backgroundColor: kBleuFonce,
+        foregroundColor: Colors.white,
+        title: Row(children: [
+          Text(tr('Simulation future pool'), style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+          const SizedBox(width: 8),
+          Flexible(child: Text(widget.siteName, style: const TextStyle(fontSize: 12, color: kOrange), overflow: TextOverflow.ellipsis)),
+        ]),
+        actions: [const LanguageSelectorWidget(), const SizedBox(width: 8)],
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildSectionTitleGip(tr('Cavernes actives')),
+            const SizedBox(height: 4),
+            Text(widget.listeCavites.replaceAll(',', '  |  '),
+                style: const TextStyle(color: kOrange, fontSize: 12, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 12),
+            _buildSectionTitleGip(tr('Saisir le debit du jour suivant')),
+            const SizedBox(height: 8),
+            Row(children: [
+              Expanded(
+                child: TextField(
+                  controller: _debitCtrl,
+                  keyboardType: const TextInputType.numberWithOptions(signed: true, decimal: true),
+                  style: const TextStyle(color: Colors.white),
+                  decoration: InputDecoration(
+                    labelText: tr('Debit pool (Mm3/j)'),
+                    labelStyle: const TextStyle(color: Colors.white54),
+                    hintText: '- soutirage / + injection',
+                    hintStyle: const TextStyle(color: Colors.white24, fontSize: 11),
+                    enabledBorder: const OutlineInputBorder(borderSide: BorderSide(color: Colors.white24)),
+                    focusedBorder: const OutlineInputBorder(borderSide: BorderSide(color: kOrange)),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              GestureDetector(
+                onTap: () {
+                  final txt = _debitCtrl.text.trim();
+                  if (txt.isEmpty) return;
+                  final val = double.tryParse(txt);
+                  if (val != null) {
+                    _debitCtrl.text = (-val).toString();
+                    _debitCtrl.selection = TextSelection.collapsed(offset: _debitCtrl.text.length);
+                  }
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 16),
+                  decoration: BoxDecoration(border: Border.all(color: Colors.white24), borderRadius: BorderRadius.circular(4)),
+                  child: const Text('+/-', style: TextStyle(color: Colors.white70, fontSize: 14)),
+                ),
+              ),
+              const SizedBox(width: 8),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: kOrange, foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+                icon: _loading
+                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                    : const Icon(Icons.add, size: 18),
+                label: Text(tr('Simuler')),
+                onPressed: _loading ? null : _simulerJour,
+              ),
+            ]),
+            if (_error != null) ...[
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: (_errorIsFatal ? Colors.red : Colors.orange).withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(children: [
+                  Icon(_errorIsFatal ? Icons.error_outline : Icons.warning_amber,
+                      color: _errorIsFatal ? Colors.red : Colors.orange, size: 16),
+                  const SizedBox(width: 8),
+                  Expanded(child: Text(_error!, style: TextStyle(
+                      color: _errorIsFatal ? Colors.red : Colors.orange, fontSize: 12))),
+                ]),
+              ),
+            ],
+            const SizedBox(height: 20),
+            if (_futurePoints.isNotEmpty) ...[
+              _buildSectionTitleGip(tr('Resultats journaliers')),
+              const SizedBox(height: 8),
+              _buildResultTable(),
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.white54,
+                    side: const BorderSide(color: Colors.white24),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  icon: const Icon(Icons.refresh, size: 16),
+                  label: Text(tr('Reinitialiser')),
+                  onPressed: _reset,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildResultTable() {
+    return Table(
+      border: TableBorder.all(color: Colors.white12),
+      columnWidths: const {
+        0: FlexColumnWidth(2), 1: FlexColumnWidth(1.5), 2: FlexColumnWidth(1.5),
+        3: FlexColumnWidth(1.5), 4: FlexColumnWidth(1.5),
+      },
+      children: [
+        TableRow(
+          decoration: const BoxDecoration(color: Color(0xFF1E3A5F)),
+          children: [
+            _th(tr('Date')), _th(tr('P moy (bar)')), _th(tr('T moy (C)')),
+            _th(tr('Vol total (Mm3)')), _th(tr('Debit (Mm3/j)')),
+          ],
+        ),
+        ..._futurePoints.map((p) => TableRow(children: [
+          _td(p['date']?.toString() ?? '-'),
+          _td(_fmt(p['pression'])), _td(_fmt(p['temperature'])),
+          _td(_fmt(p['volume'])),  _td(_fmt(p['debit'])),
+        ])),
+      ],
+    );
+  }
+
+  Widget _th(String v) => Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+    child: Text(v, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11), textAlign: TextAlign.center),
+  );
+  Widget _td(String v) => Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+    child: Text(v, style: const TextStyle(color: Colors.white70, fontSize: 11), textAlign: TextAlign.center),
+  );
+  String _fmt(dynamic v) {
+    if (v == null) return '-';
+    return (v as num).toDouble().toStringAsFixed(2);
+  }
+  Widget _buildSectionTitleGip(String t) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 4),
+    child: Text(t, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
+  );
+
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PAGE : INTERRUPTIBLES ET OBLIGATIONS POOL
+// ─────────────────────────────────────────────────────────────────────────────
+// ─── Page : Résultats GIP/WGV/CGV Pool ────────────────────────────────────────
+class GipPoolResultPage extends StatelessWidget {
+  final String siteName;
+  final List<Map<String, dynamic>> gipResultsPool;
+
+  const GipPoolResultPage({super.key, required this.siteName, required this.gipResultsPool});
+
+  String _fmt(dynamic v) {
+    try { return double.parse(v.toString()).toStringAsFixed(2); } catch (_) { return '-'; }
+  }
+
+  Widget _gipCell(String label, String value) {
+    return Expanded(child: Container(
+      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+      decoration: BoxDecoration(color: kOrange.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(6)),
+      child: Column(children: [
+        Text(label, style: const TextStyle(color: Colors.white54, fontSize: 9)),
+        const SizedBox(height: 2),
+        Text(value, style: const TextStyle(color: kOrange, fontWeight: FontWeight.bold, fontSize: 11)),
+      ]),
+    ));
+  }
+
+  Widget _buildSectionTitle(String t) => Padding(
+    padding: const EdgeInsets.only(bottom: 8),
+    child: Row(children: [
+      Container(width: 3, height: 16, color: kOrange, margin: const EdgeInsets.only(right: 8)),
+      Text(t, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
+    ]),
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    double totalGIPPermis = 0;
+    for (final res in gipResultsPool) {
+      totalGIPPermis += (res['WGV_GIP_CGV_list0'] as num? ?? 0).toDouble();
+    }
+    final scenKeys = ['WGV_GIP_CGV_list1','WGV_GIP_CGV_list2','WGV_GIP_CGV_list3','WGV_GIP_CGV_list4',
+                      'WGV_GIP_CGV_list5','WGV_GIP_CGV_list6','WGV_GIP_CGV_list7','WGV_GIP_CGV_list8'];
+    final agreg = <List<double>>[];
+    for (final key in scenKeys) {
+      double w = 0, g = 0, c = 0;
+      for (final res in gipResultsPool) {
+        final v = res[key] as List<dynamic>?;
+        if (v != null && v.length >= 3) {
+          w += (v[0] as num).toDouble();
+          g += (v[1] as num).toDouble();
+          c += (v[2] as num).toDouble();
+        }
+      }
+      agreg.add([w, g, c]);
+    }
+    final minWGV = agreg.isEmpty ? 0.0 : agreg.map((l) => l[0]).reduce((a,b) => a<b?a:b);
+    final maxCGV = agreg.isEmpty ? 0.0 : agreg.map((l) => l[2]).reduce((a,b) => a>b?a:b);
+    final totalWGV = minWGV, totalCGV = maxCGV, totalGIP = minWGV + maxCGV;
+    final maxWGV = agreg.isEmpty ? 0.0 : agreg.map((l) => l[0]).reduce((a,b) => a>b?a:b);
+    final minCGV = agreg.isEmpty ? 0.0 : agreg.map((l) => l[2]).reduce((a,b) => a<b?a:b);
+
+    final scenKeys2 = ['WGV_GIP_CGV_list1','WGV_GIP_CGV_list2','WGV_GIP_CGV_list3','WGV_GIP_CGV_list4',
+                       'WGV_GIP_CGV_list5','WGV_GIP_CGV_list6','WGV_GIP_CGV_list7','WGV_GIP_CGV_list8',
+                       'WGV_GIP_CGV_list9','WGV_GIP_CGV_list10','WGV_GIP_CGV_list13','WGV_GIP_CGV_list14'];
+    final scenLabels2 = [
+      tr('Pmax permis(Qmax)'), tr('Pmax permis(Qmin)'),
+      tr('Pmin permis(Qmax)'), tr('Pmin permis(Qmin)'),
+      tr('Pmax histo(Qmax)'), tr('Pmax histo(Qmin)'),
+      tr('Pmin histo(Qmax)'), tr('Pmin histo(Qmin)'),
+      tr('Dernière P inj(Qmax)'), tr('Dernière P inj(Qmin)'),
+      tr('Dernière P souti(Qmax)'), tr('Dernière P souti(Qmin)'),
+    ];
+
+    return Scaffold(
+      backgroundColor: kBleuFonce,
+      appBar: AppBar(
+        backgroundColor: kBleuFonce, foregroundColor: Colors.white,
+        title: Row(children: [
+          Text(tr('GIP / WGV / CGV'), style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+          const SizedBox(width: 8),
+          Flexible(child: Text(siteName, style: const TextStyle(fontSize: 12, color: kOrange), overflow: TextOverflow.ellipsis)),
+        ]),
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          _buildSectionTitle(tr('GIP / WGV / CGV Pool — Agrégé')),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(color: kOrange.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(10), border: Border.all(color: kOrange.withValues(alpha: 0.4))),
+            child: Column(children: [
+              Row(children: [
+                const Icon(Icons.star, color: kOrange, size: 16),
+                const SizedBox(width: 8),
+                Text(tr('GIP permis total'), style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                const Spacer(),
+                Text('${totalGIPPermis.toStringAsFixed(2)} Mm³', style: const TextStyle(color: kOrange, fontWeight: FontWeight.bold, fontSize: 14)),
+              ]),
+              const SizedBox(height: 8),
+              Row(children: [
+                _gipCell('WGV total', totalWGV.toStringAsFixed(2)),
+                const SizedBox(width: 8),
+                _gipCell('GIP total', totalGIP.toStringAsFixed(2)),
+                const SizedBox(width: 8),
+                _gipCell('CGV total', totalCGV.toStringAsFixed(2)),
+              ]),
+            ]),
+          ),
+          const SizedBox(height: 16),
+          _buildSectionTitle(tr('Détail par caverne')),
+          ...gipResultsPool.map((res) {
+            final cavName = res['cavityName'] ?? res['CavityName'] ?? '';
+            final cavKeys = ['WGV_GIP_CGV_list1','WGV_GIP_CGV_list2','WGV_GIP_CGV_list3','WGV_GIP_CGV_list4',
+                             'WGV_GIP_CGV_list5','WGV_GIP_CGV_list6','WGV_GIP_CGV_list7','WGV_GIP_CGV_list8'];
+            double cavMinWGV = double.maxFinite, cavMaxCGV = 0;
+            for (final k in cavKeys) {
+              final v = res[k] as List<dynamic>?;
+              if (v != null && v.length >= 3) {
+                final w = (v[0] as num).toDouble();
+                final c = (v[2] as num).toDouble();
+                if (w < cavMinWGV) cavMinWGV = w;
+                if (c > cavMaxCGV) cavMaxCGV = c;
+              }
+            }
+            if (cavMinWGV == double.maxFinite) cavMinWGV = 0;
+            return Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(color: kBleuMoyen.withValues(alpha: 0.5), borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.white12)),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Row(children: [
+                  const Icon(Icons.account_tree, color: kOrange, size: 14),
+                  const SizedBox(width: 6),
+                  Text(cavName, style: const TextStyle(color: kOrange, fontWeight: FontWeight.bold, fontSize: 13)),
+                  const Spacer(),
+                  Text('GIP: ${_fmt(res["WGV_GIP_CGV_list0"])} Mm³', style: const TextStyle(color: Colors.white70, fontSize: 11)),
+                ]),
+                const SizedBox(height: 6),
+                Row(children: [
+                  _gipCell('WGV', cavMinWGV.toStringAsFixed(2)),
+                  const SizedBox(width: 8),
+                  _gipCell('GIP', (cavMinWGV + cavMaxCGV).toStringAsFixed(2)),
+                  const SizedBox(width: 8),
+                  _gipCell('CGV', cavMaxCGV.toStringAsFixed(2)),
+                ]),
+              ]),
+            );
+          }).toList(),
+          const SizedBox(height: 8),
+          _buildSectionTitle(tr('Scénarios détaillés — Pool agrégé')),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: DataTable(
+              headingRowColor: WidgetStateProperty.all(kBleuMoyen),
+              dataRowMinHeight: 28, dataRowMaxHeight: 36, columnSpacing: 12,
+              headingTextStyle: const TextStyle(color: kOrange, fontWeight: FontWeight.bold, fontSize: 10),
+              dataTextStyle: const TextStyle(color: Colors.white, fontSize: 10),
+              columns: [
+                DataColumn(label: Text(tr('Scénario'), style: const TextStyle(color: kOrange, fontWeight: FontWeight.bold, fontSize: 10))),
+                DataColumn(label: const Text('WGV'), numeric: true),
+                DataColumn(label: const Text('CGV'), numeric: true),
+                DataColumn(label: const Text('GIP'), numeric: true),
+              ],
+              rows: () {
+                final rows = <DataRow>[];
+                final fixedRows = [
+                  [tr('Valeurs garanties'), totalWGV, totalGIP, totalCGV],
+                  [tr('Valeurs minimales'), minWGV, minWGV + minCGV, minCGV],
+                  [tr('Valeurs maximales'), maxWGV, maxWGV + maxCGV, maxCGV],
+                ];
+                for (final r in fixedRows) {
+                  rows.add(DataRow(
+                    color: WidgetStateProperty.all(kOrange.withValues(alpha: 0.15)),
+                    cells: [
+                      DataCell(Text(r[0] as String, style: const TextStyle(color: kOrange, fontWeight: FontWeight.bold, fontSize: 9.5))),
+                      DataCell(Text((r[1] as double).toStringAsFixed(2), style: const TextStyle(color: Colors.red, fontSize: 10))),
+                      DataCell(Text((r[3] as double).toStringAsFixed(2), style: const TextStyle(color: Colors.red, fontSize: 10))),
+                      DataCell(Text((r[2] as double).toStringAsFixed(2), style: const TextStyle(color: Colors.red, fontSize: 10))),
+                    ],
+                  ));
+                }
+                for (int i = 0; i < scenKeys2.length; i++) {
+                  double totWGV = 0, totGIP = 0, totCGV = 0; bool hasData = false;
+                  for (final res in gipResultsPool) {
+                    final v = res[scenKeys2[i]] as List<dynamic>?;
+                    if (v != null && v.length >= 3) {
+                      totWGV += (v[0] as num).toDouble();
+                      totGIP += (v[1] as num).toDouble();
+                      totCGV += (v[2] as num).toDouble();
+                      hasData = true;
+                    }
+                  }
+                  if (!hasData) continue;
+                  rows.add(DataRow(
+                    color: WidgetStateProperty.all(Colors.transparent),
+                    cells: [
+                      DataCell(Text(scenLabels2[i], style: const TextStyle(color: Colors.white70, fontSize: 9.5))),
+                      DataCell(Text(totWGV.toStringAsFixed(2))),
+                      DataCell(Text(totCGV.toStringAsFixed(2))),
+                      DataCell(Text(totGIP.toStringAsFixed(2))),
+                    ],
+                  ));
+                }
+                return rows;
+              }(),
+            ),
+          ),
+        ]),
+      ),
+    );
+  }
+}
+
+// ─── Page : Débits maximaux (Ratchet Pool) ─────────────────────────────────────
+class RatchetPoolPage extends StatelessWidget {
+  final String titre;
+  final Map<String, dynamic> data;
+
+  const RatchetPoolPage({super.key, required this.titre, required this.data});
+
+  String _fmt(dynamic v) {
+    try { return double.parse(v.toString()).toStringAsFixed(2); } catch (_) { return '-'; }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final pressList = (data['pressionAllPermitSansDoublonList'] as List<dynamic>?) ?? [];
+    final volMm3    = (data['volumeMm3'] as List<dynamic>?) ?? [];
+    final injMm3    = (data['injectionMm3ByD'] as List<dynamic>?) ?? [];
+    final soutiMm3  = (data['soutirageMm3ByD'] as List<dynamic>?) ?? [];
+    final filling   = (data['fillingLevelDeChaquePressionPermis'] as List<dynamic>?)
+                   ?? (data['fillingLevelTotalList'] as List<dynamic>?) ?? [];
+    final nbActif   = (data['nbCaviteActive'] as List<dynamic>?) ?? [];
+    final injKW     = (data['injectionKW'] as List<dynamic>?) ?? [];
+    final soutiKW   = (data['soutirageKW'] as List<dynamic>?) ?? [];
+
+    return Scaffold(
+      backgroundColor: kBleuFonce,
+      appBar: AppBar(
+        backgroundColor: kBleuFonce, foregroundColor: Colors.white,
+        title: Text(titre, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: DataTable(
+            headingRowColor: WidgetStateProperty.all(kBleuMoyen),
+            dataRowColor: WidgetStateProperty.resolveWith((s) =>
+                s.contains(WidgetState.selected) ? kOrange.withValues(alpha:0.1) : Colors.white.withValues(alpha:0.05)),
+            columnSpacing: 16,
+            headingTextStyle: const TextStyle(color: kOrange, fontWeight: FontWeight.bold, fontSize: 10),
+            dataTextStyle: const TextStyle(color: Colors.white, fontSize: 9.5),
+            columns: [
+              const DataColumn(label: Text('P (bar)')),
+              const DataColumn(label: Text('Filling %')),
+              const DataColumn(label: Text('Nb cav')),
+              const DataColumn(label: Text('Vol Mm3')),
+              const DataColumn(label: Text('Inj Mm3/j')),
+              const DataColumn(label: Text('Souti Mm3/j')),
+              const DataColumn(label: Text('Vol kWh')),
+              const DataColumn(label: Text('Inj kW')),
+              const DataColumn(label: Text('Souti kW')),
+            ],
+            rows: List.generate(pressList.length, (i) {
+              return DataRow(cells: [
+                DataCell(Text(_fmt(pressList[i]))),
+                DataCell(Text(i < filling.length  ? _fmt(filling[i])  : '-')),
+                DataCell(Text(i < nbActif.length  ? _fmt(nbActif[i])  : '-')),
+                DataCell(Text(i < volMm3.length   ? _fmt(volMm3[i])   : '-')),
+                DataCell(Text(i < injMm3.length   ? _fmt(injMm3[i])   : '-')),
+                DataCell(Text(i < soutiMm3.length ? _fmt(soutiMm3[i]) : '-')),
+                DataCell(Text(i < injKW.length    ? _fmt(injKW[i])    : '-')),
+                DataCell(Text(i < soutiKW.length  ? _fmt(soutiKW[i])  : '-')),
+                DataCell(Text(i < soutiKW.length  ? _fmt(soutiKW[i])  : '-')),
+              ]);
+            }),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class InterruptiblesPoolPage extends StatelessWidget {
+  final String siteName;
+  final List<Map<String, dynamic>> gipResultsPool;
+
+  const InterruptiblesPoolPage({
+    super.key,
+    required this.siteName,
+    required this.gipResultsPool,
+  });
+
+  String _fmt(dynamic v) {
+    if (v == null) return '-';
+    try { return double.parse(v.toString()).toStringAsFixed(2); } catch (_) { return '-'; }
+  }
+
+  int _compareDates(String a, String b) {
+    try {
+      final pa = a.split('/'); final pb = b.split('/');
+      final da = DateTime(int.parse(pa[2]), int.parse(pa[1]), int.parse(pa[0]));
+      final db = DateTime(int.parse(pb[2]), int.parse(pb[1]), int.parse(pb[0]));
+      return da.compareTo(db);
+    } catch (_) { return 0; }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (gipResultsPool.isEmpty) {
+      return Scaffold(
+        backgroundColor: kBleuFonce,
+        appBar: AppBar(backgroundColor: kBleuFonce, foregroundColor: Colors.white,
+            title: Text(tr('Interruptibles et obligations'))),
+        body: const Center(child: Text('Aucune donnée', style: TextStyle(color: Colors.white54))),
+      );
+    }
+
+    // Agrégation pool
+    double intInjWGV = 0, intWithWGV = 0;
+    double intInjGar = 0, intWithGar = 0;
+    double avgVolAlongY = 0, avgVolBeginY = 0, avgVolEndY = 0, avgFlowEndY = 0;
+    double presPool = 0, presAvg = 0;
+    String lastestDay = '-';
+
+    for (final res in gipResultsPool) {
+      intInjWGV   += (res['interruptible_WGV_inj']  as num? ?? 0).toDouble();
+      intWithWGV  += (res['interruptible_WGV_with'] as num? ?? 0).toDouble();
+      intInjGar   += (res['average_interruptible_injection_guaranteed']  as num? ?? 0).toDouble();
+      intWithGar  += (res['average_interruptible_withdrawal_guaranteed'] as num? ?? 0).toDouble();
+      avgVolAlongY += (res['avgVolumeAlongY']     as num? ?? 0).toDouble();
+      avgVolBeginY += (res['avgVolumeBeginningY'] as num? ?? 0).toDouble();
+      avgVolEndY   += (res['avgVolumeStoredEndY'] as num? ?? 0).toDouble();
+      avgFlowEndY  += (res['avgVolumeInjWithEndY'] as num? ?? 0).toDouble();
+      if (presPool == 0) presPool = (res['presentPressurePool'] as num? ?? 0).toDouble();
+      if (presAvg == 0)  presAvg  = (res['avgPressure']         as num? ?? 0).toDouble();
+      // lastestDayToMove : le plus tôt (le plus contraignant)
+      final ldm = res['lastestDayToMove']?.toString() ?? '';
+      if (ldm.isNotEmpty && (lastestDay == '-' || _compareDates(ldm, lastestDay) < 0)) lastestDay = ldm;
+    }
+
+    Widget obligRow(String label, String value) => Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Expanded(flex: 3, child: Text(label, style: const TextStyle(color: Colors.white70, fontSize: 11))),
+        const SizedBox(width: 8),
+        Expanded(flex: 2, child: Text(value, style: const TextStyle(color: kOrange, fontWeight: FontWeight.bold, fontSize: 12))),
+      ]),
+    );
+
+    final obligRows = [
+      [tr('Pression moyenne'),                                    '${presAvg.toStringAsFixed(2)} bar'],
+      [tr('Pression actuelle'),                                   '${presPool.toStringAsFixed(2)} bar'],
+      [tr("Volume Moyen à stocker tout au long de l'année gazière (indicatif)"), '${avgVolAlongY.toStringAsFixed(2)} Mm³'],
+      [tr("Volume Moyen depuis le début de l'année gazière"),     '${avgVolBeginY.toStringAsFixed(2)} Mm³'],
+      [tr("Volume moyen à stocker jusqu'à la fin de l'année gazière (indicatif)"), '${avgVolEndY.toStringAsFixed(2)} Mm³'],
+      [tr("Volume journalier moyen inj(+) / souti(-) jusqu'à la fin de l'année gazière (indicatif)"), '${avgFlowEndY.toStringAsFixed(2)} Mm³/j'],
+      [tr('Dernier jour pour inj(+) / sout(-)'),                 lastestDay],
+    ];
+
+    return Scaffold(
+      backgroundColor: kBleuFonce,
+      appBar: AppBar(
+        backgroundColor: kBleuFonce,
+        foregroundColor: Colors.white,
+        title: Row(children: [
+          Text(tr('Interruptibles et obligations'), style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+          const SizedBox(width: 8),
+          Flexible(child: Text(siteName, style: const TextStyle(fontSize: 12, color: kOrange), overflow: TextOverflow.ellipsis)),
+        ]),
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+
+          // ── Volumes interruptibles ──
+          Text(tr('Volumes interruptibles'), style: const TextStyle(color: kOrange, fontWeight: FontWeight.bold, fontSize: 13)),
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.05),
+                borderRadius: BorderRadius.circular(10), border: Border.all(color: Colors.white12)),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                Expanded(child: Text(tr('Volume interruptible si injection'), style: const TextStyle(color: Colors.white70, fontSize: 12))),
+                Text('${intInjGar.toStringAsFixed(2)} Mm³', style: const TextStyle(color: kOrange, fontWeight: FontWeight.bold, fontSize: 13)),
+              ]),
+              const SizedBox(height: 8),
+              Row(children: [
+                Expanded(child: Text(tr('Volume interruptible si soutirage'), style: const TextStyle(color: Colors.white70, fontSize: 12))),
+                Text('${intWithGar.toStringAsFixed(2)} Mm³', style: const TextStyle(color: kOrange, fontWeight: FontWeight.bold, fontSize: 13)),
+              ]),
+            ]),
+          ),
+          const SizedBox(height: 24),
+
+          // ── Obligations ──
+          Text(tr('Obligations'), style: const TextStyle(color: kOrange, fontWeight: FontWeight.bold, fontSize: 13)),
+          const SizedBox(height: 8),
+          Container(
+            decoration: BoxDecoration(borderRadius: BorderRadius.circular(10), border: Border.all(color: Colors.white12)),
+            clipBehavior: Clip.antiAlias,
+            child: Column(children: [
+              for (int i = 0; i < obligRows.length; i++) ...[
+                Container(
+                  color: Colors.white.withValues(alpha: i.isEven ? 0.03 : 0.0),
+                  child: obligRow(obligRows[i][0], obligRows[i][1]),
+                ),
+                if (i < obligRows.length - 1) const Divider(height: 1, color: Colors.white12),
+              ],
+            ]),
+          ),
+          const SizedBox(height: 24),
+        ]),
       ),
     );
   }
