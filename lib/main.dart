@@ -2820,6 +2820,46 @@ class _PoolSimulationPageState extends State<PoolSimulationPage> with LocalizedP
   }
 
   // ── Étape 2 : calculer GIP/WGV/CGV pool ──
+  Future<bool> _chargerGipPoolSiVide() async {
+    if (_gipResultsPool.isNotEmpty) return true;
+    setState(() { _loadingGip = true; });
+    try {
+      final uri4 = Uri(
+        scheme: 'http',
+        host: kBaseUrl.replaceAll('http://', '').split(':')[0],
+        port: 8080,
+        path: '/api/getMenu_Pool',
+      );
+      final response = await http.post(
+        uri4,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'SiteName': widget.siteName,
+          'ListeCavites': _selected.join(','),
+          'dateValueDernierPtHistoPlusieursCavite': '',
+          'presMoyennePermis': '0',
+        }),
+      ).timeout(const Duration(seconds: 120));
+      if (response.statusCode == 200) {
+        final List<dynamic> parsed = jsonDecode(response.body);
+        setState(() {
+          _gipResult = parsed.isNotEmpty ? Map<String, dynamic>.from(parsed[0] as Map) : {};
+          _gipResultsPool = parsed.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+          _loadingGip = false;
+        });
+        return true;
+      } else {
+        setState(() { _loadingGip = false; });
+        if (mounted) _showError('Erreur GIP pool: ${response.statusCode}');
+        return false;
+      }
+    } catch (e) {
+      setState(() { _loadingGip = false; });
+      if (mounted) _showError('Erreur: $e');
+      return false;
+    }
+  }
+
   Future<void> _calculerGipPool() async {
     setState(() { _loadingGip = true; _gipResult = null; });
     try {
@@ -3278,7 +3318,9 @@ class _PoolSimulationPageState extends State<PoolSimulationPage> with LocalizedP
         SizedBox(
           width: double.infinity,
           child: ElevatedButton.icon(
-            onPressed: () async {
+            onPressed: _loadingGip ? null : () async {
+              final ok = await _chargerGipPoolSiVide();
+              if (!ok || !mounted) return;
               Navigator.push(context, MaterialPageRoute(
                 builder: (_) => InterruptiblesPoolPage(
                   siteName: widget.siteName,
@@ -3286,7 +3328,10 @@ class _PoolSimulationPageState extends State<PoolSimulationPage> with LocalizedP
                 ),
               ));
             },
-            icon: const Icon(Icons.pause_circle_outline, size: 18),
+            icon: _loadingGip
+                ? const SizedBox(width: 18, height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                : const Icon(Icons.pause_circle_outline, size: 18),
             label: Text(tr('Interruptibles et obligations'), style: const TextStyle(fontWeight: FontWeight.bold)),
             style: ElevatedButton.styleFrom(
               backgroundColor: kOrange,
