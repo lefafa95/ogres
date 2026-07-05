@@ -6,7 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:crypto/crypto.dart';
 import 'package:fl_chart/fl_chart.dart';
 
-const String kBaseUrl = 'http://192.168.1.20:8080';
+const String kBaseUrl = 'http://192.168.1.21:8080';
 const Color kBleuFonce = Color(0xFF0D1B2A);
 const Color kBleuMoyen = Color(0xFF1A3A5C);
 const Color kOrange = Color(0xFFE87722);
