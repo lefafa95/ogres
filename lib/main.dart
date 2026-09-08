@@ -5,8 +5,21 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:crypto/crypto.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
-const String kBaseUrl = 'http://192.168.1.20:8080';
+String kBaseUrl = 'http://192.168.1.20:8080';
+const String kDefaultBaseUrl = 'http://192.168.1.20:8080';
+
+Future<void> loadServerUrl() async {
+  final prefs = await SharedPreferences.getInstance();
+  kBaseUrl = prefs.getString('server_url') ?? kDefaultBaseUrl;
+}
+
+Future<void> saveServerUrl(String url) async {
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.setString('server_url', url);
+  kBaseUrl = url;
+}
 const Color kBleuFonce = Color(0xFF0D1B2A);
 const Color kBleuMoyen = Color(0xFF1A3A5C);
 const Color kOrange = Color(0xFFE87722);
@@ -36,12 +49,16 @@ class AppLocalizations {
   }
 
   static Future<void> load(String locale) async {
-    final String jsonString =
-        await rootBundle.loadString('assets/i18n/$locale.json');
-    final Map<String, dynamic> jsonMap = json.decode(jsonString);
-    _translations =
-        jsonMap.map((key, value) => MapEntry(key, value.toString()));
-    languageNotifier.value = locale;
+    try {
+      final String jsonString =
+          await rootBundle.loadString('assets/i18n/$locale.json');
+      final Map<String, dynamic> jsonMap = json.decode(jsonString);
+      _translations =
+          jsonMap.map((key, value) => MapEntry(key, value.toString()));
+      languageNotifier.value = locale;
+    } catch (e) {
+      debugPrint('Erreur chargement traduction $locale: $e');
+    }
   }
 
   static String tr(String key) => _translations[key] ?? key;
@@ -166,6 +183,7 @@ class StatsCalage {
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   AppLocalizations.initEmpty();
+  await loadServerUrl();
   runApp(const OgresApp());
 }
 
@@ -325,6 +343,15 @@ class _SitesListPageState extends State<SitesListPage> with LocalizedPage {
     );
   }
 
+  Future<void> _openServerSettings() async {
+    await Navigator.push(context, MaterialPageRoute(
+      builder: (context) => const ServerSettingsPage(),
+    ));
+    if (!mounted) return;
+    setState(() => _isLoading = true);
+    _loadSites();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -350,6 +377,11 @@ class _SitesListPageState extends State<SitesListPage> with LocalizedPage {
         actions: [
           const LanguageSelectorWidget(),
           IconButton(
+            icon: const Icon(Icons.settings, color: Colors.white),
+            tooltip: tr('Paramètres serveur'),
+            onPressed: _openServerSettings,
+          ),
+          IconButton(
             icon: const Icon(Icons.refresh, color: Colors.white),
             onPressed: () { setState(() => _isLoading = true); _loadSites(); },
           ),
@@ -370,6 +402,16 @@ class _SitesListPageState extends State<SitesListPage> with LocalizedPage {
                         onPressed: _loadSites,
                         style: ElevatedButton.styleFrom(backgroundColor: kOrange),
                         child: Text(tr('Réessayer')),
+                      ),
+                      const SizedBox(height: 12),
+                      OutlinedButton.icon(
+                        onPressed: _openServerSettings,
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: kOrange,
+                          side: const BorderSide(color: kOrange),
+                        ),
+                        icon: const Icon(Icons.settings),
+                        label: Text(tr('Paramètres serveur')),
                       ),
                     ],
                   ),
@@ -1885,6 +1927,7 @@ class _CavitePageState extends State<CavitePage> with LocalizedPage {
       {'label': tr('Contacts'), 'icon': Icons.contacts, 'active': false},
       {'label': tr('Mail'), 'icon': Icons.mail, 'active': false},
       {'label': tr('Rapport mensuel'), 'icon': Icons.summarize, 'active': false},
+      {'label': tr('Serveur'), 'icon': Icons.settings_ethernet, 'active': true},
     ];
 
     return Column(
@@ -1921,15 +1964,19 @@ class _CavitePageState extends State<CavitePage> with LocalizedPage {
               ),
               onPressed: isActive
                   ? () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
+                      final lbl = menu['label'] as String;
+                      if (lbl == tr('Serveur')) {
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (context) => ServerSettingsPage(),
+                        ));
+                      } else {
+                        Navigator.push(context, MaterialPageRoute(
                           builder: (context) => ExportSitePage(
                             siteId: widget.siteId,
                             siteName: widget.siteName,
                           ),
-                        ),
-                      );
+                        ));
+                      }
                     }
                   : null,
             ),
@@ -5432,6 +5479,203 @@ class InterruptiblesPoolPage extends StatelessWidget {
           const SizedBox(height: 24),
         ]),
       ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────
+// PAGE : SETTINGS SERVEUR
+// ─────────────────────────────────────────────
+class ServerSettingsPage extends StatefulWidget {
+  const ServerSettingsPage({super.key});
+  @override
+  State<ServerSettingsPage> createState() => _ServerSettingsPageState();
+}
+
+class _ServerSettingsPageState extends State<ServerSettingsPage> with LocalizedPage {
+  final _controller = TextEditingController();
+  bool _saved = false;
+  bool _testing = false;
+  String? _testResult;
+  bool? _testOk;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.text = kBaseUrl;
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    final url = _controller.text.trim();
+    if (url.isEmpty) return;
+    await saveServerUrl(url);
+    setState(() { _saved = true; });
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(tr('URL serveur sauvegardée')), backgroundColor: kVert),
+      );
+    }
+  }
+
+  Future<void> _test() async {
+    final url = _controller.text.trim();
+    if (url.isEmpty) return;
+    setState(() { _testing = true; _testResult = null; _testOk = null; });
+    try {
+      final response = await http.get(Uri.parse('$url/api/sites'))
+          .timeout(const Duration(seconds: 5));
+      setState(() {
+        _testing = false;
+        _testOk = response.statusCode == 200;
+        _testResult = response.statusCode == 200
+            ? tr('Connexion OK ✓')
+            : 'HTTP ${response.statusCode}';
+      });
+    } catch (e) {
+      setState(() {
+        _testing = false;
+        _testOk = false;
+        _testResult = tr('Connexion échouée : serveur inaccessible');
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: kBleuFonce,
+      appBar: AppBar(
+        backgroundColor: kBleuMoyen,
+        foregroundColor: Colors.white,
+        title: Text(tr('Paramètres serveur'),
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(tr('URL du serveur OGRES'),
+                style: const TextStyle(color: Colors.white70, fontSize: 13)),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _controller,
+              style: const TextStyle(color: Colors.white, fontSize: 14),
+              keyboardType: TextInputType.url,
+              decoration: InputDecoration(
+                hintText: 'http://192.168.1.20:8080',
+                hintStyle: const TextStyle(color: Colors.white30),
+                filled: true,
+                fillColor: kBleuMoyen,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(color: kOrange)),
+                focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(color: kOrange, width: 2)),
+                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                    borderSide: BorderSide(color: Colors.white24)),
+                suffixIcon: IconButton(
+                  icon: const Icon(Icons.clear, color: Colors.white54),
+                  onPressed: () => _controller.clear(),
+                ),
+              ),
+              onChanged: (_) => setState(() { _saved = false; _testResult = null; }),
+            ),
+            const SizedBox(height: 8),
+            Text('URL actuelle : $kBaseUrl',
+                style: const TextStyle(color: Colors.white38, fontSize: 11)),
+            const SizedBox(height: 24),
+            Row(children: [
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: _testing ? null : _test,
+                  icon: _testing
+                      ? const SizedBox(width: 16, height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                      : const Icon(Icons.wifi_find, size: 18),
+                  label: Text(tr('Tester la connexion')),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: kBleuMoyen,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: _save,
+                  icon: const Icon(Icons.save, size: 18),
+                  label: Text(tr('Sauvegarder')),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: kOrange,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                ),
+              ),
+            ]),
+            if (_testResult != null) ...[
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: (_testOk == true ? kVert : kRouge).withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: _testOk == true ? kVert : kRouge),
+                ),
+                child: Row(children: [
+                  Icon(_testOk == true ? Icons.check_circle : Icons.error,
+                      color: _testOk == true ? kVert : kRouge, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(child: Text(_testResult!,
+                      style: TextStyle(color: _testOk == true ? kVert : kRouge,
+                          fontWeight: FontWeight.bold))),
+                ]),
+              ),
+            ],
+            const SizedBox(height: 24),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: kBleuMoyen.withValues(alpha: 0.5),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.white12),
+              ),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(tr('Exemples'),
+                    style: const TextStyle(color: kOrange, fontWeight: FontWeight.bold, fontSize: 12)),
+                const SizedBox(height: 8),
+                _urlExample('Réseau maison', 'http://192.168.1.20:8080'),
+                _urlExample('Réseau vacances (Airbox)', 'http://192.168.X.X:8080'),
+                _urlExample('Tailscale', 'http://100.X.X.X:8080'),
+              ]),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _urlExample(String label, String url) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Row(children: [
+        Text('• $label : ', style: const TextStyle(color: Colors.white54, fontSize: 11)),
+        GestureDetector(
+          onTap: () { _controller.text = url; setState(() {}); },
+          child: Text(url,
+              style: const TextStyle(color: kOrange, fontSize: 11,
+                  decoration: TextDecoration.underline)),
+        ),
+      ]),
     );
   }
 }
